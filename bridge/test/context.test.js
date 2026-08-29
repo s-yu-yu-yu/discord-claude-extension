@@ -45,6 +45,12 @@ test("neighbor expansion returns five earlier or later messages", () => {
   assert.deepEqual(plain(takeNeighborMessages(messages, [messages[5]], "later", 5)), ["7", "8", "9", "10"].map((id) => message(id)));
 });
 
+test("neighbor expansion skips messages already sent to the Claude Session", () => {
+  const messages = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"].map((id) => message(id));
+  assert.deepEqual(ids(takeNeighborMessages(messages, [messages[5]], "later", 5, new Set(["7", "9"]))), ["8", "10"]);
+  assert.deepEqual(ids(takeNeighborMessages(messages, [messages[5]], "earlier", 2, new Set(["5"]))), ["3", "4"]);
+});
+
 test("neighbor expansion sorts source into its chronological position", () => {
   const source = message("105");
   const domOrder = ["105", "106", "107", "108", "109", "110", "100", "101", "102", "103", "104"]

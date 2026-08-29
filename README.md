@@ -67,6 +67,10 @@ Discord のメッセージをホバーすると Claude ボタンが表示され�
 
 完了した General Session では Side Panel の「Projectで続行 (Handoff)」から Project を選び、任意の追加指示を付けて新しい Project Session を開始できます。Bridge は元セッションを `claude --resume <id> --fork-session` で fork し、調査結果・決定事項・Source Link・関連リンク（Jira / GitHub）・現在判明している問題・次に実行すべき作業を見出しにした Handoff を生成します。元の General Session は変更されず、そのまま再開できます。Handoff は新しい Project Session の初期コンテキストとして最初の「指示」turn に表示され、Side Panel は元セッションへのリンクを表示します。セッション一覧は従来どおりフラットです。
 
+Current Session を開いたまま Discord の別メッセージで Claude ボタンを押すと、送信 UI の先頭に「新しいセッションを開始」「現在のセッションに追加: <タイトル>」の選択が表示されます。既定は新しいセッションで、「現在のセッションに追加」を選ぶと同じ Message Context のルールと調整 UI（返信チェーン、前後5件、message 単位の ON/OFF）で選んだメッセージが Source Link 付きで同じ Claude Session に追加されます。すでに送信済みのメッセージは候補から除かれます。
+
+Side Panel の「Discordコンテキストを更新」は、Current Session の Source Message があるチャンネルを開いている Discord Web のタブで送信 UI を開き直し、そのセッションへまだ送っていないメッセージだけを差分として表示します。差分は message 単位で ON/OFF してから追加します。別のチャンネルを表示している場合は Source Message のチャンネルへ移動するので、読み込み後にもう一度押してください。Bridge や拡張が Discord の変化を自動で取り込むことはなく、更新は常にこの明示的な操作で行います。
+
 Side Panel のセッション一覧は Chrome の `storage.local` に保存した索引を起動時に Bridge と照合します。Bridge は Claude Code 2.1.251 が使う設定ルート（通常 `~/.claude`、`CLAUDE_CONFIG_DIR` または `claudeConfigDir` 指定時はそのルート）配下の `projects/<cwd-with-separators-replaced-by->/<session-id>.jsonl` を実在性の根拠にします。初回 turn では Claude に `[DCE_SESSION_TITLE]短いタイトル[/DCE_SESSION_TITLE]` マーカーを回答冒頭へ出すよう依頼し、Bridge がマーカーを除去してタイトルとして一覧へ保存します。
 
 ## 開発コマンド
@@ -90,4 +94,5 @@ npm run typecheck # JS-only 構成のため構文検査を実行
 - Issue #2 では Side Panel のセッション一覧、同じ Claude Session への追加指示、実行中 turn の停止、完了後の未読 badge と閲覧時の既読化を提供します。Bridge 再起動後も Claude JSONL が残っているセッションを再表示できます。
 - Issue #5 では Bridge の設定ファイルで General Workspace・Project root（走査深さ付き）・Action Preset を管理し、送信 UI は既定で General Workspace、必要なときだけ Project を選んで Project Session を開始します。Project の自動検出は `.git` を含むディレクトリのみで、Handoff は対象外です。
 - Issue #6 では完了した General Session から Project を選び、`--fork-session` で元セッションを変更せずに Handoff を生成して新しい Project Session の初期コンテキストにします。元セッションは別の Claude Session として残り、Project Session は元セッションへのリンクを保持します。Handoff の内容は Claude の要約であり、Bridge は検証しません。
+- Issue #7 では既存の Claude Session へ Discord コンテキストを追加します。Side Panel の「Discordコンテキストを更新」は開いている Discord タブのチャンネルを再読み込みし、送信済み ID との差分だけを確認対象にします。Discord の別メッセージから「現在のセッションに追加」も選べますが、既定は新しいセッションの開始です。追加分は `--resume` した同じ Claude Session に 1 turn として送られ、Source Link を保持します。自動同期は行いません。
 - 手動 archive/delete、OS 通知、Bridge 認証、Discord への投稿、自動リトライは対象外です。Discord の内部 cache は現在の Webpack から最小限に探索するため、Discord の更新で利用できなくなる可能性があります。

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { isConfiguredCwd, listProjects, readClaudeSessionMetadata } from "./config.js";
 import { createClaudeRunner } from "./claude-runner.js";
-import { buildHandoffPrompt, buildHandoffRequestPrompt, buildPrompt, validateSessionRequest } from "./prompt.js";
+import { buildContextAppendPrompt, buildHandoffPrompt, buildHandoffRequestPrompt, buildPrompt, validateSessionRequest } from "./prompt.js";
 import { prepareAttachments } from "./attachments.js";
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -77,19 +77,26 @@ function sameMessage(left, right) {
 
 // Downloads supported attachments of the Message Context into the session's
 // directory and reports each result as a tool event before Claude starts.
-export async function attachSessionFiles({ config, session, res }) {
+// `messages` defaults to the whole Message Context; a context append passes
+// only the newly selected messages and receives them back prepared.
+export async function attachSessionFiles({ config, session, res, messages }) {
   const sourceIncluded = session.messageContext.some((message) => sameMessage(message, session.sourceMessage));
-  const messages = sourceIncluded ? session.messageContext : [session.sourceMessage, ...session.messageContext];
+  const initial = sourceIncluded ? session.messageContext : [session.sourceMessage, ...session.messageContext];
   const prepared = await prepareAttachments({
-    messages,
+    messages: messages || initial,
     directory: path.join(config.attachmentsDir, session.id),
     maxBytes: config.attachmentMaxBytes,
   });
   for (const failure of prepared.failures) sendSse(res, "tool", { name: `添付ファイル取得失敗: ${failure.name}`, detail: failure.error });
   for (const file of prepared.downloaded) sendSse(res, "tool", { name: `添付ファイル取得: ${file.name}`, detail: file.localPath });
+  if (prepared.downloaded.length > 0) session.attachmentsDir = prepared.directory;
+  if (messages) {
+    session.messageContext = [...session.messageContext, ...prepared.messages];
+    return prepared.messages;
+  }
   session.sourceMessage = prepared.messages.find((message) => sameMessage(message, session.sourceMessage)) || session.sourceMessage;
   session.messageContext = sourceIncluded ? prepared.messages : prepared.messages.slice(1);
-  if (prepared.downloaded.length > 0) session.attachmentsDir = prepared.directory;
+  return prepared.messages;
 }
 
 function actionFor(config, actionId) {
@@ -252,14 +259,16 @@ export function createBridgeServer({ config, runnerFactory = createClaudeRunner 
         json(res, 400, { error: error.message });
         return;
       }
-      if (typeof body.instruction !== "string" || !body.instruction.trim()) {
+      const appendContext = body.appendContext === true && Array.isArray(body.messageContext) && body.messageContext.length > 0;
+      if (!appendContext && (typeof body.instruction !== "string" || !body.instruction.trim())) {
         json(res, 400, { error: "instruction is required." });
         return;
       }
       let session = sessions.get(sessionId);
       if (!session) {
         try {
-          session = makeSession(config, { ...body, cwd: body.cwd }, sessionId, runnerFactory, { resume: true });
+          // New messages of a context append are stored by attachSessionFiles.
+          session = makeSession(config, { ...body, messageContext: appendContext ? [] : body.messageContext }, sessionId, runnerFactory, { resume: true });
           sessions.set(session.id, session);
         } catch (error) {
           json(res, 404, { error: "Claude Session not found or its cwd is not configured." });
@@ -267,6 +276,19 @@ export function createBridgeServer({ config, runnerFactory = createClaudeRunner 
         }
       }
       sseHeaders(res);
+      if (appendContext) {
+        // Context Expansion: only the newly selected messages are prepared and
+        // sent; Claude already holds everything from earlier turns.
+        const messages = await attachSessionFiles({ config, session, res, messages: body.messageContext });
+        const prompt = buildContextAppendPrompt({
+          action: actionFor(config, body.actionId),
+          instruction: body.instruction || "",
+          messages,
+          sourceMessage: body.sourceMessage,
+        });
+        await runAndStream({ config, session, prompt, res });
+        return;
+      }
       // Claude already owns the conversation context when resuming. Sending
       // only the follow-up instruction avoids duplicating the Source Message.
       const prompt = body.instruction.trim();

@@ -145,7 +145,7 @@
       allMessages: available,
       missingRanges: selected.missingRanges,
       warning: selected.warning,
-      reply: Boolean(resolvedSource.replyTo || replyParentId(sourceRoot)),
+      reply: Boolean(resolvedSource.replyTo || (sourceRoot && replyParentId(sourceRoot))),
     };
   }
 
@@ -156,9 +156,18 @@
     return node;
   }
 
-  function createComposer(sourceRoot) {
+  // options.mode "append" adds the selection to the Current Session instead of
+  // starting a new Claude Session. sourceRoot may be null when the Source
+  // Message is scrolled out of the DOM during a context refresh.
+  function createComposer(sourceRoot, options = {}) {
     if (composer) composer.remove();
-    let source = extractMessage(sourceRoot);
+    let source = sourceRoot ? extractMessage(sourceRoot) : options.sourceMessage;
+    let mode = options.mode || "new";
+    let session = options.session || null;
+    let submitting = false;
+    const sentIds = new Set(options.sentMessageIds || []);
+    const visibleMessages = () => mode === "append" ? contextState.messages.filter((message) => !sentIds.has(message.id)) : contextState.messages;
+    const selectedMessages = () => visibleMessages().filter((message) => contextState.includedIds.has(message.id));
     let contextState = {
       messages: [source],
       allMessages: [source],
@@ -209,7 +218,7 @@
 
     function renderContext() {
       contextList.replaceChildren();
-      for (const message of contextState.messages) {
+      for (const message of visibleMessages()) {
         const row = element("label", "dce-context-item");
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
@@ -218,6 +227,7 @@
         checkbox.addEventListener("change", () => {
           if (checkbox.checked) contextState.includedIds.add(message.id);
           else contextState.includedIds.delete(message.id);
+          updateSubmit();
         });
         const details = element("span", "dce-context-details");
         details.append(
@@ -232,6 +242,7 @@
       if (contextState.loading) {
         notices.push("返信コンテキストを確認しています…");
       } else {
+        if (mode === "append" && visibleMessages().length === 0) notices.push("前回送信以降の新しいメッセージはありません。前後5件の追加で候補を探せます。");
         if (contextState.warning) notices.push(contextTools.contextWarning(contextState.messages));
         for (const missing of contextState.missingRanges) {
           if (missing.direction === "earlier") notices.push("親方向の返信チェーンを一部取得できませんでした。");
@@ -244,6 +255,11 @@
       contextStatus.className = contextState.loading || notices.length > 0 ? "dce-context-status warning" : "dce-context-status";
       earlier.disabled = contextState.loading || contextState.allMessages.length === 0;
       later.disabled = contextState.loading || contextState.allMessages.length === 0;
+      updateSubmit();
+    }
+
+    function updateSubmit() {
+      submit.disabled = submitting || contextState.loading || (mode === "append" && selectedMessages().length === 0);
     }
 
     function addNeighbors(direction) {
@@ -252,6 +268,7 @@
         contextState.messages,
         direction,
         5,
+        mode === "append" ? sentIds : new Set(),
       );
       if (candidates.length === 0) {
         if (!contextState.missingRanges.some((missing) => missing.direction === direction)) {
@@ -272,8 +289,28 @@
     }
     earlier.addEventListener("click", () => addNeighbors("earlier"));
     later.addEventListener("click", () => addNeighbors("later"));
-    renderContext();
     let contextReady = Promise.resolve();
+
+    const modeRow = element("div", "dce-mode-row");
+    modeRow.hidden = true;
+    dialog.append(modeRow);
+    // Offered when a Current Session can receive this Source Message. Starting
+    // a new Claude Session stays the default.
+    function offerAppend(current) {
+      session = current;
+      for (const id of current.sentMessageIds || []) sentIds.add(id);
+      modeRow.replaceChildren(...[["new", "新しいセッションを開始"], ["append", "現在のセッションに追加: " + current.title]].map(([value, label]) => {
+        const option = element("label", "dce-mode-option");
+        const radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = "dce-mode";
+        radio.checked = value === mode;
+        radio.addEventListener("change", () => { mode = value; applyMode(); renderContext(); });
+        option.append(radio, document.createTextNode(label));
+        return option;
+      }));
+      modeRow.hidden = false;
+    }
 
     const actionLabel = element("label", "dce-field-label", "Action Preset");
     const action = document.createElement("select");
@@ -328,33 +365,37 @@
     cancel.addEventListener("click", () => backdrop.remove());
     const submit = element("button", "dce-primary", "Claudeへ送信");
     submit.type = "button";
-    submit.disabled = true;
+    function applyMode() {
+      const append = mode === "append";
+      title.textContent = append ? "Current Session に追加: " + session.title : "Claudeへ送る";
+      submit.textContent = append ? "Current Session に追加" : "Claudeへ送信";
+      projectRow.hidden = append;
+      projectSelect.hidden = append || !projectToggle.hidden;
+    }
     submit.addEventListener("click", async () => {
-      submit.disabled = true;
+      submitting = true;
+      updateSubmit();
       submit.textContent = "送信中…";
       error.hidden = true;
       await contextReady;
-      const result = await sendMessage({
-        type: "start-session",
-        payload: {
-          sourceMessage: source,
-          messageContext: contextState.messages.filter((message) => contextState.includedIds.has(message.id)),
-          actionId: action.value,
-          instruction: instruction.value,
-          projectId: projectSelect.value || undefined,
-        },
-      });
+      const payload = { sourceMessage: source, messageContext: selectedMessages(), actionId: action.value, instruction: instruction.value };
+      const result = mode === "append"
+        ? await sendMessage({ type: "append-context", sessionId: session.sessionId, payload })
+        : await sendMessage({ type: "start-session", payload: { ...payload, projectId: projectSelect.value || undefined } });
       if (result?.ok) {
         backdrop.remove();
       } else {
-        submit.disabled = false;
-        submit.textContent = "Claudeへ送信";
+        submitting = false;
+        applyMode();
+        updateSubmit();
         error.hidden = false;
         error.querySelector(".dce-error-text").textContent = result?.error || "Claude Bridgeに接続できません。";
       }
     });
     footer.append(cancel, submit);
     dialog.append(footer);
+    applyMode();
+    renderContext();
     backdrop.append(dialog);
     backdrop.addEventListener("click", (event) => { if (event.target === backdrop) backdrop.remove(); });
     document.body.append(backdrop);
@@ -378,9 +419,13 @@
       sourceAuthor.textContent = source.author + " · " + source.timestamp;
       sourceText.textContent = source.text || "（本文なし）";
       link.href = source.sourceLink;
-      submit.disabled = false;
       renderContext();
     });
+    if (mode === "new") {
+      sendMessage({ type: "current-session" }).then((result) => {
+        if (result?.ok && result.session && backdrop.isConnected) offerAppend(result.session);
+      });
+    }
 
     sendMessage({ type: "bridge-config" }).then((config) => {
       if (!config?.ok) {
@@ -424,6 +469,27 @@
       root.append(button);
     }
   }
+
+  // Side Panel「Discordコンテキストを更新」: re-read this channel and offer only
+  // the messages not yet sent to that Claude Session.
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type !== "dce-refresh-context") return false;
+    const channel = message.sourceMessage?.channel;
+    if ((channel?.channelId || channel?.id || "") !== currentChannel().channelId) {
+      sendResponse({ ok: false, reason: "channel-mismatch" });
+      return false;
+    }
+    const id = message.sourceMessage?.id;
+    const root = id ? document.querySelector(`[data-list-item-id$="-${id}"], [data-message-id="${id}"]`) : null;
+    createComposer(root, {
+      mode: "append",
+      session: { sessionId: message.sessionId, title: message.sessionTitle },
+      sentMessageIds: message.sentMessageIds,
+      sourceMessage: message.sourceMessage,
+    });
+    sendResponse({ ok: true });
+    return false;
+  });
 
   function inspect(node) {
     const root = messageRoot(node);

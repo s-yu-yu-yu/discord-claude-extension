@@ -55,6 +55,8 @@
 .dce-context-actions { display: flex; gap: 6px; margin-top: 8px; }
 .dce-context-add { background: #e5e7eb; border: 0; border-radius: 4px; color: #374151; cursor: pointer; font: inherit; padding: 5px 7px; }
 .dce-context-add:disabled { cursor: default; opacity: .6; }
+.dce-mode-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.dce-mode-option { align-items: center; display: flex; gap: 6px; }
 .dce-project-row { align-items: center; display: flex; gap: 8px; margin-top: 8px; }
 .dce-link-button { background: transparent; border: 0; color: #2563eb; cursor: pointer; font: inherit; font-size: 12px; padding: 0; text-decoration: underline; }
 .dce-select, .dce-textarea { border: 1px solid #d1d5db; border-radius: 5px; box-sizing: border-box; font: inherit; padding: 8px; width: 100%; }

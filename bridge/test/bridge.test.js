@@ -298,10 +298,12 @@ test("Bridge resumes a stateless session using its Claude session ID", async (t)
   const sessionId = "123e4567-e89b-12d3-a456-426614174000";
   let receivedResumeId;
   let receivedCwd;
+  let receivedPrompt;
   const runnerFactory = () => ({
-    async run({ resumeId, cwd, onEvent }) {
+    async run({ resumeId, cwd, prompt, onEvent }) {
       receivedResumeId = resumeId;
       receivedCwd = cwd;
+      receivedPrompt = prompt;
       onEvent({ type: "delta", text: "続き" });
       onEvent({ type: "complete", text: "続き" });
       return { text: "続き" };
@@ -313,13 +315,57 @@ test("Bridge resumes a stateless session using its Claude session ID", async (t)
   const response = await fetch(`${base}/sessions/${sessionId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cwd: config.workspace, instruction: "続けて" }),
+    body: JSON.stringify({
+      cwd: config.workspace,
+      instruction: "続けて",
+      sourceMessage: { id: "1", text: "source", sourceLink: "https://discord.com/channels/1/2/1" },
+      messageContext: [{ id: "1", text: "source", sourceLink: "https://discord.com/channels/1/2/1" }],
+    }),
   });
   const body = await response.text();
   assert.equal(response.status, 200);
   assert.equal(receivedResumeId, sessionId);
   assert.equal(receivedCwd, config.workspace);
+  // A plain follow-up never re-sends the Message Context.
+  assert.equal(receivedPrompt, "続けて");
   assert.match(body, /続き/);
+});
+
+test("Bridge appends newly selected Message Context to a resumed session", async (t) => {
+  const sessionId = "123e4567-e89b-12d3-a456-426614174001";
+  let received;
+  const runnerFactory = () => ({
+    async run({ prompt, resumeId, onEvent }) {
+      received = { prompt, resumeId };
+      onEvent({ type: "complete", text: "追加済み" });
+      return { text: "追加済み" };
+    },
+    stop() { return true; },
+  });
+  const { server, base, config } = await startTestServer(runnerFactory);
+  t.after(() => server.close());
+  const makeMessage = (id, text) => ({ id, text, author: "Author " + id, timestamp: "2026-08-30T01:02:03Z", channel: { id: "2", name: "#eng" }, sourceLink: "https://discord.com/channels/1/2/" + id });
+  const response = await fetch(`${base}/sessions/${sessionId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      cwd: config.workspace,
+      appendContext: true,
+      actionId: "research",
+      sourceMessage: makeMessage("10", "source"),
+      messageContext: [makeMessage("11", "new one"), makeMessage("12", "new two")],
+    }),
+  });
+  await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(received.resumeId, sessionId);
+  assert.match(received.prompt, /## 追加 Message Context/);
+  assert.match(received.prompt, /## Action Preset\n調査する/);
+  assert.match(received.prompt, /https:\/\/discord\.com\/channels\/1\/2\/11/);
+  assert.match(received.prompt, /https:\/\/discord\.com\/channels\/1\/2\/12/);
+  assert.equal(received.prompt.match(/Source Link:/g)?.length, 2);
+  assert.doesNotMatch(received.prompt, /DCE_SESSION_TITLE/);
+  assert.deepEqual(server.sessions.get(sessionId).messageContext.map((message) => message.id), ["11", "12"]);
 });
 
 test("Bridge resets the turn accumulator after stop before resuming", async (t) => {

@@ -103,7 +103,7 @@ function selectReplyChain(sourceId, messages) {
   };
 }
 
-function takeNeighborMessages(messages, contextMessages, direction, count = 5) {
+function takeNeighborMessages(messages, contextMessages, direction, count = 5, excludeIds = new Set()) {
   const available = uniqueMessages(messages);
   const contextIds = new Set(contextMessages.map(messageId));
   const indexes = available
@@ -116,7 +116,7 @@ function takeNeighborMessages(messages, contextMessages, direction, count = 5) {
   const result = [];
   for (let index = start; index >= 0 && index < available.length && result.length < count; index += step) {
     const message = available[index];
-    if (!contextIds.has(messageId(message))) result.push(message);
+    if (!contextIds.has(messageId(message)) && !excludeIds.has(messageId(message))) result.push(message);
   }
   if (direction === "earlier") result.reverse();
   return result;

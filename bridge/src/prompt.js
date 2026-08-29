@@ -76,6 +76,24 @@ export function buildPrompt({ action, instruction = "", sourceMessage, messageCo
   ].join("\n");
 }
 
+// Follow-up turn that appends newly selected Discord messages to a resumed session.
+export function buildContextAppendPrompt({ action, instruction = "", messages = [], sourceMessage }) {
+  const context = messages.length > 0 ? messages : [sourceMessage];
+  return [
+    "以下は同じ Discord 会話から追加で選択された Message Context です。既存の作業コンテキストに加えて扱ってください。各メッセージの Source Link は原文へ戻るためのリンクです。",
+    ...(hasLocalFile(context)
+      ? ["添付ファイルのうち Local file が示されているものは Bridge がダウンロード済みです。Read ツールでそのパスを読んで内容を確認してください。"]
+      : []),
+    ...(action?.prompt?.trim() ? ["", "## Action Preset", action.prompt.trim()] : []),
+    "",
+    "## User instruction",
+    instruction.trim() || "（追加指示なし）",
+    "",
+    "## 追加 Message Context",
+    ...context.map((message, index) => formatMessage(message, index)),
+  ].join("\n");
+}
+
 const HANDOFF_HEADINGS = ["## 調査結果", "## 決定事項", "## Source Link", "## 関連リンク (Jira / GitHub など)", "## 現在判明している問題", "## 次に実行すべき作業"];
 
 // Asked of the General Session (as a fork) to produce the Handoff itself.

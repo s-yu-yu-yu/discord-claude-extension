@@ -58,6 +58,7 @@ function serializeState(state) {
     error: state.error,
     derivedFrom: state.derivedFrom || null,
     handoffText: state.handoffText || "",
+    sentMessageIds: state.sentMessageIds || [],
     createdAt: state.createdAt,
     updatedAt: state.updatedAt,
   };
@@ -126,6 +127,7 @@ function stateFromRecord(record) {
     error: record.error || "",
     derivedFrom: record.derivedFrom || null,
     handoffText: record.handoffText || "",
+    sentMessageIds: Array.isArray(record.sentMessageIds) ? record.sentMessageIds : [],
     createdAt: record.createdAt || Date.now(),
     updatedAt: record.updatedAt || record.createdAt || Date.now(),
     previousSessionIds: [],
@@ -323,6 +325,100 @@ function pendingState(fields) {
   };
 }
 
+function messageIds(messages) {
+  return [...new Set(messages.map((message) => message?.id).filter(Boolean))];
+}
+
+// The Current Session that a Discord composer may append to: the active
+// session unless a turn is still running.
+async function currentSession() {
+  const state = await stateForId(activeSessionId);
+  if (!state || state.status === "running") return null;
+  return { sessionId: state.sessionId, title: state.title, status: state.status, sentMessageIds: state.sentMessageIds || [] };
+}
+
+// Context Expansion: appends newly selected Discord messages to an existing
+// Claude Session as one resumed turn.
+async function appendContext(message, sender, sendResponse) {
+  const panelPromise = openPanel(sender.tab?.windowId);
+  const state = await stateForId(message.sessionId);
+  if (!state) { sendResponse({ ok: false, error: "Claude Sessionが見つかりません。" }); return; }
+  if (state.status === "running") { sendResponse({ ok: false, error: "この Claude Session は実行中です。" }); return; }
+  const { sourceMessage, messageContext = [], actionId, instruction = "" } = message.payload;
+  const previousStatus = state.status;
+  if (state.text) state.turns.push({ role: "assistant", text: state.text, status: previousStatus });
+  state.turns.push({
+    role: "user",
+    text: `Discordコンテキストを追加（${messageContext.length}件）\n` + messageContext.map((item) => `- ${item.sourceLink}`).join("\n") +
+      (instruction.trim() ? "\n\n" + instruction.trim() : ""),
+  });
+  state.status = "running";
+  state.error = "";
+  state.text = "";
+  state.tools = [];
+  state.unread = false;
+  const previousSentIds = state.sentMessageIds || [];
+  state.sentMessageIds = messageIds([...previousSentIds.map((id) => ({ id })), ...messageContext]);
+  activeSessionId = state.sessionId;
+  await persistState(state, { immediate: true });
+  sendToPanels({ type: "state", state: serializeState(state) });
+  await panelPromise;
+  sendResponse({ ok: true, sessionId: state.sessionId });
+  startStream(state, `/sessions/${encodeURIComponent(state.sessionId)}/messages`, {
+    appendContext: true,
+    instruction,
+    messageContext,
+    sourceMessage,
+    actionId,
+    cwd: state.cwd,
+    title: state.title,
+  }).then(() => {
+    // A turn that never reached Claude must not hide its messages from the next refresh.
+    if (state.status === "error") {
+      state.sentMessageIds = previousSentIds;
+      persistState(state, { immediate: true });
+    }
+  });
+}
+
+const DISCORD_URLS = ["https://discord.com/*", "https://canary.discord.com/*", "https://ptb.discord.com/*"];
+
+// Asks the Discord tab to open the composer in append mode. Discord is only
+// re-read on this explicit request; nothing is pulled automatically.
+async function refreshContext(port, message) {
+  const state = await stateForId(message.sessionId);
+  if (!state) { port.postMessage({ type: "command-error", error: "Claude Sessionが見つかりません。" }); return; }
+  if (state.status === "running") { port.postMessage({ type: "command-error", error: "この Claude Session は実行中です。" }); return; }
+  const tabs = await chrome.tabs.query({ url: DISCORD_URLS });
+  const channelUrl = String(state.sourceMessage?.sourceLink || "").replace(/\/\d+$/, "");
+  const tab = tabs.find((item) => channelUrl && item.url?.startsWith(channelUrl)) || tabs.find((item) => item.active) || tabs[0];
+  if (!tab) { port.postMessage({ type: "command-error", error: "Discord Web のタブを開いてください。" }); return; }
+  let reply;
+  try {
+    reply = await chrome.tabs.sendMessage(tab.id, {
+      type: "dce-refresh-context",
+      sessionId: state.sessionId,
+      sessionTitle: state.title,
+      sourceMessage: state.sourceMessage,
+      sentMessageIds: state.sentMessageIds || [],
+    });
+  } catch {
+    port.postMessage({ type: "command-error", error: "Discord Web のタブを再読み込みしてください。" });
+    return;
+  }
+  if (reply?.ok) {
+    chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+    chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+    return;
+  }
+  if (reply?.reason === "channel-mismatch") {
+    await chrome.tabs.update(tab.id, { url: state.sourceMessage.sourceLink, active: true });
+    port.postMessage({ type: "command-error", error: "Source Message のチャンネルを開きました。読み込み後にもう一度「Discordコンテキストを更新」を押してください。" });
+    return;
+  }
+  port.postMessage({ type: "command-error", error: "Discord のコンテキストを更新できませんでした。" });
+}
+
 async function startSession(message, sender, sendResponse) {
   const state = pendingState({
     projectId: message.payload.projectId || null,
@@ -331,6 +427,7 @@ async function startSession(message, sender, sendResponse) {
     instruction: message.payload.instruction || "",
     actionId: message.payload.actionId,
     turns: message.payload.instruction?.trim() ? [{ role: "user", text: message.payload.instruction.trim() }] : [],
+    sentMessageIds: messageIds([message.payload.sourceMessage, ...(message.payload.messageContext || [])]),
   });
   states.set(state.sessionId, state);
   activeSessionId = state.sessionId;
@@ -416,6 +513,8 @@ chrome.runtime.onConnect.addListener((port) => {
         sourceMessage: original.sourceMessage,
         title: original.title,
       });
+    } else if (message.type === "refresh-context") {
+      await refreshContext(port, message);
     } else if (message.type === "stop-session") {
       const state = await stateForId(message.sessionId);
       if (!state) { port.postMessage({ type: "command-error", error: "Claude Sessionが見つかりません。" }); return; }
@@ -439,6 +538,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "start-session") {
     startSession(message, sender, sendResponse);
+    return true;
+  }
+  if (message.type === "append-context") {
+    appendContext(message, sender, sendResponse).catch((error) => sendResponse({ ok: false, error: error?.message || String(error) }));
+    return true;
+  }
+  if (message.type === "current-session") {
+    currentSession().then((session) => sendResponse({ ok: true, session })).catch(() => sendResponse({ ok: true, session: null }));
     return true;
   }
   if (message.type === "open-options") {

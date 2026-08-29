@@ -113,6 +113,7 @@ function renderState(state) {
     return item;
   }));
   $("#stop").disabled = state.status !== "running";
+  $("#refresh-context").disabled = state.status === "running" || !state.sourceMessage?.sourceLink;
   $("#instruction").disabled = state.status === "running";
   $("#continue-form button").disabled = state.status === "running";
   renderSessions();
@@ -154,6 +155,9 @@ $("#copy").addEventListener("click", async () => {
 });
 $("#stop").addEventListener("click", () => {
   if (currentState?.status === "running") port.postMessage({ type: "stop-session", sessionId: currentState.sessionId });
+});
+$("#refresh-context").addEventListener("click", () => {
+  if (currentState && currentState.status !== "running") port.postMessage({ type: "refresh-context", sessionId: currentState.sessionId });
 });
 $("#derived-from-link").addEventListener("click", () => {
   if (currentState?.derivedFrom) port.postMessage({ type: "view-session", sessionId: currentState.derivedFrom.sessionId });
