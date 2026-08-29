@@ -4,6 +4,7 @@ function valueOrUnknown(value) {
 
 export const SESSION_TITLE_START = "[DCE_SESSION_TITLE]";
 export const SESSION_TITLE_END = "[/DCE_SESSION_TITLE]";
+const TITLE_INSTRUCTION = `最初に、あなたがこの作業に付ける短いタイトルを ${SESSION_TITLE_START}タイトル${SESSION_TITLE_END} の形式で1行だけ出力してください。タイトルは80文字以内にし、その後に通常の回答を続けてください。マーカー自体は通常の回答へ繰り返しません。`;
 
 export function extractSessionTitle(text) {
   const match = String(text || "").match(/\[DCE_SESSION_TITLE\]\s*([\s\S]*?)\s*\[\/DCE_SESSION_TITLE\]/i);
@@ -60,7 +61,7 @@ export function buildPrompt({ action, instruction = "", sourceMessage, messageCo
     ...(hasLocalFile([source, ...context])
       ? ["添付ファイルのうち Local file が示されているものは Bridge がダウンロード済みです。Read ツールでそのパスを読んで内容を確認してください。"]
       : []),
-    `最初に、あなたがこの作業に付ける短いタイトルを ${SESSION_TITLE_START}タイトル${SESSION_TITLE_END} の形式で1行だけ出力してください。タイトルは80文字以内にし、その後に通常の回答を続けてください。マーカー自体は通常の回答へ繰り返しません。`,
+    TITLE_INSTRUCTION,
     "",
     "## Action Preset",
     actionPrompt,
@@ -72,6 +73,39 @@ export function buildPrompt({ action, instruction = "", sourceMessage, messageCo
     formatMessage(source, 0),
     "",
     ...(context.length > 1 ? ["", "## Message Context", ...additionalContext.map((message, index) => formatMessage(message, index))] : []),
+  ].join("\n");
+}
+
+const HANDOFF_HEADINGS = ["## 調査結果", "## 決定事項", "## Source Link", "## 関連リンク (Jira / GitHub など)", "## 現在判明している問題", "## 次に実行すべき作業"];
+
+// Asked of the General Session (as a fork) to produce the Handoff itself.
+export function buildHandoffRequestPrompt({ instruction = "", projectPath }) {
+  return [
+    `このセッションの作業を、Project \`${projectPath}\` を cwd とする新しい Project Session へ引き継ぎます。`,
+    "これまでの会話内容から Handoff を作成してください。出力は Markdown の Handoff のみとし、前置きや補足は書かないでください。",
+    `先頭に \`対象 Project: ${projectPath}\` の1行を置き、続けて次の見出しを必ずこの順で使ってください。`,
+    ...HANDOFF_HEADINGS,
+    "Source Link には Message Context の Discord permalink を、関連リンクには判明している Jira / GitHub の URL を記載し、不明な項目は「（なし）」と書いてください。",
+    "",
+    "## 移行時の追加指示",
+    instruction.trim() || "（なし）",
+  ].join("\n");
+}
+
+// Initial prompt of the new Project Session.
+export function buildHandoffPrompt({ handoff, instruction = "", originalSessionId, projectPath }) {
+  return [
+    `あなたは Claude Code です。以下は General Session からの Handoff です。この Project（cwd: ${projectPath}）で作業を続けてください。`,
+    TITLE_INSTRUCTION,
+    "",
+    "## Handoff",
+    handoff,
+    "",
+    "## 元セッション",
+    `元の General Session は \`claude --resume ${originalSessionId}\` で参照できます。`,
+    "",
+    "## 移行時の追加指示",
+    instruction.trim() || "（なし）",
   ].join("\n");
 }
 

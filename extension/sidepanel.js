@@ -96,9 +96,16 @@ function renderState(state) {
   const status = $("#status");
   status.className = `status ${state.status || "running"}`;
   status.textContent = state.error || ({ running: "実行中", complete: "完了", stopped: "停止", error: "エラー" }[state.status] || state.status || "実行中");
+  $("#derived-from").hidden = !state.derivedFrom;
+  $("#derived-from-link").textContent = state.derivedFrom?.title || state.derivedFrom?.sessionId || "";
+  $("#promote").hidden = Boolean(state.projectId) || state.status === "running";
   const turns = (state.turns || []).map((turn) => `<div class="turn ${turn.role === "user" ? "user" : "assistant"}"><div class="turn-label">${turn.role === "user" ? "指示" : "Claude"}</div>${markdownToHtml(turn.text)}</div>`).join("");
+  // The Handoff streams before the Project Session exists; show it until it lands as the first turn.
+  const handoffPending = state.handoffText && !(state.turns || []).some((turn) => turn.text.startsWith("## Handoff"))
+    ? `<div class="turn user"><div class="turn-label">Handoff 生成中</div>${markdownToHtml(state.handoffText)}</div>`
+    : "";
   const current = `<div class="turn assistant current"><div class="turn-label">Claude</div>${markdownToHtml(state.text)}</div>`;
-  $("#response").innerHTML = turns + current;
+  $("#response").innerHTML = turns + handoffPending + current;
   $("#tools").replaceChildren(...(state.tools || []).map((tool) => {
     const item = document.createElement("div");
     item.className = "tool";
@@ -148,6 +155,22 @@ $("#copy").addEventListener("click", async () => {
 $("#stop").addEventListener("click", () => {
   if (currentState?.status === "running") port.postMessage({ type: "stop-session", sessionId: currentState.sessionId });
 });
+$("#derived-from-link").addEventListener("click", () => {
+  if (currentState?.derivedFrom) port.postMessage({ type: "view-session", sessionId: currentState.derivedFrom.sessionId });
+});
+function loadProjects() {
+  chrome.runtime.sendMessage({ type: "bridge-config" }, (config) => {
+    const select = $("#promote-project");
+    select.replaceChildren(...(config?.projects || []).map((project) => new Option(project.label, project.id)));
+  });
+}
+$("#promote").addEventListener("toggle", () => { if ($("#promote").open) loadProjects(); });
+$("#promote-submit").addEventListener("click", () => {
+  const projectId = $("#promote-project").value;
+  if (!projectId || !currentState || currentState.status === "running") return;
+  port.postMessage({ type: "promote-session", sessionId: currentState.sessionId, projectId, instruction: $("#promote-instruction").value.trim() });
+  $("#promote-instruction").value = "";
+});
 $("#settings").addEventListener("click", (event) => {
   event.preventDefault();
   chrome.runtime.sendMessage({ type: "open-options" });
@@ -155,3 +178,4 @@ $("#settings").addEventListener("click", (event) => {
 
 port.postMessage({ type: "get-sessions" });
 port.postMessage({ type: "get-state" });
+loadProjects();

@@ -65,6 +65,8 @@ Message Context に含まれる Discord の添付ファイルは、ファイル�
 
 Discord のメッセージをホバーすると Claude ボタンが表示されます。押すと Source Message の確認、Bridge から取得した Action Preset の選択、追加指示の入力を行えます。作業先は既定で 一般 (General Workspace) です。「Projectを選択」を押すと Bridge が見つけた Project の一覧が表示され、選ぶとその Git リポジトリを cwd とする Project Session を開始します。送信後は Side Panel が開き、Current Session の Claude 出力を SSE で受け取って Markdown 表示し、最終回答をコピーできます。完了後は同じ Claude Session へ追加指示を送り、実行中の turn を停止できます。
 
+完了した General Session では Side Panel の「Projectで続行 (Handoff)」から Project を選び、任意の追加指示を付けて新しい Project Session を開始できます。Bridge は元セッションを `claude --resume <id> --fork-session` で fork し、調査結果・決定事項・Source Link・関連リンク（Jira / GitHub）・現在判明している問題・次に実行すべき作業を見出しにした Handoff を生成します。元の General Session は変更されず、そのまま再開できます。Handoff は新しい Project Session の初期コンテキストとして最初の「指示」turn に表示され、Side Panel は元セッションへのリンクを表示します。セッション一覧は従来どおりフラットです。
+
 Side Panel のセッション一覧は Chrome の `storage.local` に保存した索引を起動時に Bridge と照合します。Bridge は Claude Code 2.1.251 が使う設定ルート（通常 `~/.claude`、`CLAUDE_CONFIG_DIR` または `claudeConfigDir` 指定時はそのルート）配下の `projects/<cwd-with-separators-replaced-by->/<session-id>.jsonl` を実在性の根拠にします。初回 turn では Claude に `[DCE_SESSION_TITLE]短いタイトル[/DCE_SESSION_TITLE]` マーカーを回答冒頭へ出すよう依頼し、Bridge がマーカーを除去してタイトルとして一覧へ保存します。
 
 ## 開発コマンド
@@ -87,4 +89,5 @@ npm run typecheck # JS-only 構成のため構文検査を実行
 - Claude Code CLI の `stream-json` 出力（`stream_event` 内の partial delta と後続の assistant 全文を含む）を delta / tool / result に正規化します。未知の JSON イベントや JSON ではない stdout の診断行は回答へ混ぜず無視します。
 - Issue #2 では Side Panel のセッション一覧、同じ Claude Session への追加指示、実行中 turn の停止、完了後の未読 badge と閲覧時の既読化を提供します。Bridge 再起動後も Claude JSONL が残っているセッションを再表示できます。
 - Issue #5 では Bridge の設定ファイルで General Workspace・Project root（走査深さ付き）・Action Preset を管理し、送信 UI は既定で General Workspace、必要なときだけ Project を選んで Project Session を開始します。Project の自動検出は `.git` を含むディレクトリのみで、Handoff は対象外です。
+- Issue #6 では完了した General Session から Project を選び、`--fork-session` で元セッションを変更せずに Handoff を生成して新しい Project Session の初期コンテキストにします。元セッションは別の Claude Session として残り、Project Session は元セッションへのリンクを保持します。Handoff の内容は Claude の要約であり、Bridge は検証しません。
 - 手動 archive/delete、OS 通知、Bridge 認証、Discord への投稿、自動リトライは対象外です。Discord の内部 cache は現在の Webpack から最小限に探索するため、Discord の更新で利用できなくなる可能性があります。

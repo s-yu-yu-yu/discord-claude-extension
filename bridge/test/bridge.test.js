@@ -59,6 +59,7 @@ test("normalizes Claude partial stream events and avoids assistant full-text dup
   assert.deepEqual(argsForPrompt("follow-up", "123e4567-e89b-12d3-a456-426614174000").slice(-2), ["--resume", "123e4567-e89b-12d3-a456-426614174000"]);
   assert.deepEqual(argsForPrompt("first", undefined, "123e4567-e89b-12d3-a456-426614174000").slice(-2), ["--session-id", "123e4567-e89b-12d3-a456-426614174000"]);
   assert.deepEqual(argsForPrompt("first", undefined, undefined, ["/tmp/att"]).slice(-2), ["--add-dir", "/tmp/att"]);
+  assert.deepEqual(argsForPrompt("handoff", "123e4567-e89b-12d3-a456-426614174000", undefined, [], { fork: true }).slice(-3), ["--resume", "123e4567-e89b-12d3-a456-426614174000", "--fork-session"]);
 });
 
 test("extracts a Claude-generated title marker and does not filter resume output", () => {
@@ -371,6 +372,51 @@ test("Bridge resets the turn accumulator after stop before resuming", async (t) 
   assert.doesNotMatch(body, /old partial/);
   assert.deepEqual(resumeIds, [null, claudeSessionId]);
   assert.equal(runCwds[0], runCwds[1]);
+});
+
+test("Bridge promotes a General Session into a Project Session with a forked Handoff", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "discord-promote-"));
+  const project = path.join(root, "repo");
+  await mkdir(path.join(project, ".git"), { recursive: true });
+  const originalId = "123e4567-e89b-12d3-a456-426614174000";
+  const runs = [];
+  const runnerFactory = () => ({
+    async run({ prompt, cwd, resumeId, sessionId, fork, onEvent }) {
+      runs.push({ prompt, cwd, resumeId, sessionId, fork });
+      const text = runs.length === 1 ? "## 調査結果\n- 原因は設定漏れ" : "着手します";
+      onEvent({ type: "delta", text });
+      onEvent({ type: "complete", text });
+      return { text };
+    },
+    stop() { return true; },
+  });
+  const { server, base, config } = await startTestServer(runnerFactory, { projectRoots: [{ path: root }] });
+  t.after(() => server.close());
+  const response = await fetch(`${base}/sessions/${originalId}/promote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId: project, cwd: config.workspace, instruction: "テストも追加", title: "元の調査" }),
+  });
+  const body = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(runs.length, 2);
+  assert.equal(runs[0].resumeId, originalId);
+  assert.equal(runs[0].fork, true);
+  assert.equal(runs[0].cwd, config.workspace);
+  assert.match(runs[0].prompt, /## 次に実行すべき作業/);
+  assert.equal(runs[1].cwd, project);
+  assert.ok(!runs[1].resumeId);
+  assert.ok(runs[1].sessionId && runs[1].sessionId !== originalId);
+  assert.match(runs[1].prompt, /## Handoff\n## 調査結果\n- 原因は設定漏れ/);
+  assert.match(runs[1].prompt, /テストも追加/);
+  assert.match(runs[1].prompt, new RegExp(`claude --resume ${originalId}`));
+  assert.match(body, /event: handoff-delta/);
+  assert.match(body, /event: handoff\ndata: \{"text":"## 調査結果/);
+  assert.match(body, new RegExp(`event: session\ndata: \\{[^\n]*"derivedFrom":"${originalId}","derivedFromTitle":"元の調査"`));
+  assert.match(body, /着手します/);
+  assert.match(body, /event: done/);
+  assert.notEqual(server.sessions.get(originalId).status, "running");
+  assert.equal(server.sessions.get(runs[1].sessionId).derivedFrom, originalId);
 });
 
 test("Bridge reconciliation reports existing Claude JSONL sessions only", async (t) => {

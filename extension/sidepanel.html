@@ -19,12 +19,19 @@
     <section id="empty" class="empty">Discordの Claude ボタンから Source Message を送ると、ここに結果が表示されます。</section>
     <section id="conversation" hidden>
       <div id="status" class="status">準備中</div>
+      <div id="derived-from" class="derived-from" hidden>元セッション: <button id="derived-from-link" class="link" type="button"></button></div>
       <div id="tools" class="tools"></div>
       <article id="response" class="response" aria-live="polite"></article>
       <div class="response-actions">
         <button id="copy" type="button">最終回答をコピー</button>
         <button id="stop" type="button">停止</button>
       </div>
+      <details id="promote" hidden>
+        <summary>Projectで続行 (Handoff)</summary>
+        <select id="promote-project"></select>
+        <textarea id="promote-instruction" rows="2" placeholder="移行時の追加指示（任意）"></textarea>
+        <button id="promote-submit" type="button">Handoff を生成して Project Session を開始</button>
+      </details>
       <form id="continue-form" class="continue-form">
         <label for="instruction">追加指示</label>
         <textarea id="instruction" rows="3" placeholder="Current Session に追加指示を送る"></textarea>

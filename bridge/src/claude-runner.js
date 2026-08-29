@@ -43,10 +43,13 @@ export function normalizeClaudeEvent(event) {
   return result;
 }
 
-export function argsForPrompt(prompt, resumeId, sessionId, addDirs = []) {
+export function argsForPrompt(prompt, resumeId, sessionId, addDirs = [], { fork = false } = {}) {
   const args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--include-partial-messages"];
-  if (resumeId) args.push("--resume", resumeId);
-  else if (sessionId) args.push("--session-id", sessionId);
+  if (resumeId) {
+    args.push("--resume", resumeId);
+    // A fork reads the resumed conversation but writes to a new Claude Session.
+    if (fork) args.push("--fork-session");
+  } else if (sessionId) args.push("--session-id", sessionId);
   for (const dir of addDirs) args.push("--add-dir", dir);
   return args;
 }
@@ -125,10 +128,10 @@ export function createClaudeRunner(config) {
   let stopped = false;
 
   return {
-    run({ prompt, cwd, resumeId, sessionId, addDirs = [], onEvent }) {
+    run({ prompt, cwd, resumeId, sessionId, addDirs = [], fork = false, onEvent }) {
       return new Promise((resolve, reject) => {
         stopped = false;
-        child = spawn(config.claudeCommand, argsForPrompt(prompt, resumeId, sessionId, addDirs), {
+        child = spawn(config.claudeCommand, argsForPrompt(prompt, resumeId, sessionId, addDirs, { fork }), {
           cwd,
           env: config.claudeConfigDir
             ? { ...process.env, CLAUDE_CONFIG_DIR: config.claudeConfigDir }

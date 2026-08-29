@@ -4,7 +4,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { isConfiguredCwd, listProjects, readClaudeSessionMetadata } from "./config.js";
 import { createClaudeRunner } from "./claude-runner.js";
-import { buildPrompt, validateSessionRequest } from "./prompt.js";
+import { buildHandoffPrompt, buildHandoffRequestPrompt, buildPrompt, validateSessionRequest } from "./prompt.js";
 import { prepareAttachments } from "./attachments.js";
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -270,6 +270,83 @@ export function createBridgeServer({ config, runnerFactory = createClaudeRunner 
       // Claude already owns the conversation context when resuming. Sending
       // only the follow-up instruction avoids duplicating the Source Message.
       const prompt = body.instruction.trim();
+      await runAndStream({ config, session, prompt, res });
+      return;
+    }
+
+    const promoteMatch = pathname.match(/^\/sessions\/([^/]+)\/promote$/);
+    if (req.method === "POST" && promoteMatch) {
+      const originalId = decodeURIComponent(promoteMatch[1]);
+      let body;
+      try {
+        body = await readJson(req);
+      } catch (error) {
+        json(res, 400, { error: error.message });
+        return;
+      }
+      if (sessions.get(originalId)?.status === "running") {
+        json(res, 400, { error: "この Claude Session は実行中です。" });
+        return;
+      }
+      let original = sessions.get(originalId);
+      let projectPath;
+      try {
+        if (!body.projectId) throw new Error("projectId is required.");
+        projectPath = resolveCwd(config, body.projectId);
+        if (!original) {
+          original = makeSession(config, { ...body, projectId: undefined }, originalId, runnerFactory, { resume: true });
+          // Nothing is in flight for a session known only from its JSONL.
+          original.status = "complete";
+          sessions.set(original.id, original);
+        }
+      } catch (error) {
+        json(res, 400, { error: error.message });
+        return;
+      }
+      sseHeaders(res);
+      // Fork the General Session so the Handoff is written by Claude with the
+      // full conversation, while the original Claude Session stays untouched.
+      let handoff = "";
+      try {
+        const result = await runnerFactory(config).run({
+          prompt: buildHandoffRequestPrompt({ instruction: body.instruction, projectPath }),
+          cwd: original.cwd,
+          resumeId: original.claudeSessionId || original.id,
+          fork: true,
+          addDirs: original.attachmentsDir ? [original.attachmentsDir] : [],
+          onEvent: (event) => {
+            if (event.type === "delta") {
+              handoff += event.text;
+              sendSse(res, "handoff-delta", { text: event.text });
+            }
+          },
+        });
+        handoff = handoff || result.text || "";
+      } catch (error) {
+        sendSse(res, "error", { message: error instanceof Error ? error.message : String(error) });
+        sendSse(res, "done", { status: "error", sessionId: originalId });
+        res.end();
+        return;
+      }
+      sendSse(res, "handoff", { text: handoff });
+      const session = makeSession(config, {
+        projectId: body.projectId,
+        sourceMessage: original.sourceMessage,
+        messageContext: original.messageContext,
+        title: original.title,
+      }, randomUUID(), runnerFactory);
+      session.derivedFrom = original.id;
+      session.attachmentsDir = original.attachmentsDir;
+      sessions.set(session.id, session);
+      sendSse(res, "session", {
+        sessionId: session.id,
+        claudeSessionId: session.id,
+        cwd: session.cwd,
+        projectId: session.projectId,
+        derivedFrom: original.id,
+        derivedFromTitle: original.title,
+      });
+      const prompt = buildHandoffPrompt({ handoff, instruction: body.instruction, originalSessionId: original.id, projectPath });
       await runAndStream({ config, session, prompt, res });
       return;
     }

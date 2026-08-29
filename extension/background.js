@@ -56,6 +56,8 @@ function serializeState(state) {
     status: state.status,
     unread: Boolean(state.unread),
     error: state.error,
+    derivedFrom: state.derivedFrom || null,
+    handoffText: state.handoffText || "",
     createdAt: state.createdAt,
     updatedAt: state.updatedAt,
   };
@@ -122,6 +124,8 @@ function stateFromRecord(record) {
     status: record.status || "complete",
     unread: Boolean(record.unread),
     error: record.error || "",
+    derivedFrom: record.derivedFrom || null,
+    handoffText: record.handoffText || "",
     createdAt: record.createdAt || Date.now(),
     updatedAt: record.updatedAt || record.createdAt || Date.now(),
     previousSessionIds: [],
@@ -219,6 +223,12 @@ function applyStreamEvent(state, event, data) {
     state.claudeSessionId = data.claudeSessionId || data.sessionId || state.claudeSessionId;
     state.cwd = data.cwd || state.cwd;
     state.projectId = data.projectId ?? state.projectId;
+    if (data.derivedFrom) state.derivedFrom = { sessionId: data.derivedFrom, title: data.derivedFromTitle || state.derivedFrom?.title };
+  } else if (event === "handoff-delta") {
+    state.handoffText = (state.handoffText || "") + (data.text || "");
+  } else if (event === "handoff") {
+    state.handoffText = data.text || "";
+    state.turns.push({ role: "user", text: "## Handoff\n\n" + state.handoffText });
   } else if (event === "title") {
     if (data.title) state.title = data.title;
   } else if (event === "delta") {
@@ -295,18 +305,13 @@ async function openPanel(windowId) {
   try { await chrome.sidePanel.open({ windowId }); } catch { /* Chrome may reject a delayed/invalid window gesture. */ }
 }
 
-async function startSession(message, sender, sendResponse) {
-  const state = {
+// A new session before the Bridge has assigned its real ID.
+function pendingState(fields) {
+  return {
     sessionId: `pending-${crypto.randomUUID()}`,
     claudeSessionId: null,
     cwd: null,
-    projectId: message.payload.projectId || null,
-    title: message.payload.instruction?.trim().slice(0, 48) || "Discord Source Message",
-    sourceMessage: message.payload.sourceMessage,
-    instruction: message.payload.instruction || "",
-    actionId: message.payload.actionId,
     text: "",
-    turns: message.payload.instruction?.trim() ? [{ role: "user", text: message.payload.instruction.trim() }] : [],
     tools: [],
     status: "running",
     unread: false,
@@ -314,7 +319,19 @@ async function startSession(message, sender, sendResponse) {
     updatedAt: Date.now(),
     error: "",
     previousSessionIds: [],
+    ...fields,
   };
+}
+
+async function startSession(message, sender, sendResponse) {
+  const state = pendingState({
+    projectId: message.payload.projectId || null,
+    title: message.payload.instruction?.trim().slice(0, 48) || "Discord Source Message",
+    sourceMessage: message.payload.sourceMessage,
+    instruction: message.payload.instruction || "",
+    actionId: message.payload.actionId,
+    turns: message.payload.instruction?.trim() ? [{ role: "user", text: message.payload.instruction.trim() }] : [],
+  });
   states.set(state.sessionId, state);
   activeSessionId = state.sessionId;
   sendToPanels({ type: "state", state: serializeState(state) });
@@ -374,6 +391,30 @@ chrome.runtime.onConnect.addListener((port) => {
         messageContext: state.sourceMessage ? [state.sourceMessage] : [],
         actionId: state.actionId,
         title: state.title,
+      });
+    } else if (message.type === "promote-session") {
+      const original = await stateForId(message.sessionId);
+      if (!original) { port.postMessage({ type: "command-error", error: "Claude Sessionが見つかりません。" }); return; }
+      if (original.status === "running") { port.postMessage({ type: "command-error", error: "この Claude Session は実行中です。" }); return; }
+      const state = pendingState({
+        projectId: message.projectId,
+        title: `${original.title} (Project)`,
+        sourceMessage: original.sourceMessage,
+        instruction: message.instruction || "",
+        actionId: original.actionId,
+        turns: [],
+        derivedFrom: { sessionId: original.sessionId, title: original.title },
+        handoffText: "",
+      });
+      states.set(state.sessionId, state);
+      activeSessionId = state.sessionId;
+      sendToPanels({ type: "state", state: serializeState(state) });
+      startStream(state, `/sessions/${encodeURIComponent(original.sessionId)}/promote`, {
+        projectId: message.projectId,
+        instruction: message.instruction,
+        cwd: original.cwd,
+        sourceMessage: original.sourceMessage,
+        title: original.title,
       });
     } else if (message.type === "stop-session") {
       const state = await stateForId(message.sessionId);
