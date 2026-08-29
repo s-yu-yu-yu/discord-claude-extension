@@ -1,4 +1,23 @@
-const port = chrome.runtime.connect({ name: "claude-sidepanel" });
+// The MV3 service worker is terminated when idle, which disconnects this port.
+// Reconnect on demand instead of letting later postMessage calls throw.
+let port;
+function connect() {
+  port = chrome.runtime.connect({ name: "claude-sidepanel" });
+  port.onMessage.addListener(handleMessage);
+  port.onDisconnect.addListener(() => { port = null; });
+  // A fresh port has no view registered in the background; restore it.
+  if (currentState) port.postMessage({ type: "view-session", sessionId: currentState.sessionId });
+}
+function send(message) {
+  if (!port) connect();
+  try {
+    port.postMessage(message);
+  } catch {
+    // onDisconnect fires asynchronously, so a stale port can still be present here.
+    connect();
+    port.postMessage(message);
+  }
+}
 let currentState = null;
 let sessions = [];
 // Terminal handoff info per Claude Session: { status, command, canOpenTerminal }.
@@ -82,7 +101,7 @@ function renderSessions() {
     button.className = `session-item${currentState?.sessionId === session.sessionId ? " current" : ""}${session.unread ? " unread" : ""}`;
     button.type = "button";
     button.innerHTML = `<span class="session-item-title">${escapeHtml(session.title || "Claude Session")}</span><span class="session-item-meta">${escapeHtml(session.status || "")} · ${escapeHtml(relativeTime(session.updatedAt))}</span>`;
-    button.addEventListener("click", () => port.postMessage({ type: "view-session", sessionId: session.sessionId }));
+    button.addEventListener("click", () => send({ type: "view-session", sessionId: session.sessionId }));
     list.append(button);
   }
 }
@@ -94,7 +113,7 @@ function renderTerminal(state) {
   if (state.claudeSessionId && state.cwd && !state.sessionId.startsWith("pending-") &&
       (!info || (info.status !== state.status && state.status !== "running"))) {
     terminalInfo.set(state.sessionId, { ...info, status: state.status });
-    port.postMessage({ type: "terminal-info", sessionId: state.sessionId });
+    send({ type: "terminal-info", sessionId: state.sessionId });
   }
   const command = terminalInfo.get(state.sessionId)?.command || "";
   $("#resume-command").hidden = !command;
@@ -140,7 +159,7 @@ function renderState(state) {
   renderSessions();
 }
 
-port.onMessage.addListener((message) => {
+function handleMessage(message) {
   if (message.type === "sessions") {
     sessions = message.sessions || [];
     renderSessions();
@@ -169,13 +188,13 @@ port.onMessage.addListener((message) => {
       if (currentState?.sessionId === message.sessionId) renderTerminal(currentState);
     }
   }
-});
+}
 
 $("#continue-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const instruction = $("#instruction").value.trim();
   if (!instruction || !currentState || currentState.status === "running") return;
-  port.postMessage({ type: "continue-session", sessionId: currentState.sessionId, instruction });
+  send({ type: "continue-session", sessionId: currentState.sessionId, instruction });
   $("#instruction").value = "";
 });
 $("#copy").addEventListener("click", async () => {
@@ -185,10 +204,10 @@ $("#copy").addEventListener("click", async () => {
   setTimeout(() => { $("#copy").textContent = "最終回答をコピー"; }, 1500);
 });
 $("#stop").addEventListener("click", () => {
-  if (currentState?.status === "running") port.postMessage({ type: "stop-session", sessionId: currentState.sessionId });
+  if (currentState?.status === "running") send({ type: "stop-session", sessionId: currentState.sessionId });
 });
 $("#terminal").addEventListener("click", () => {
-  if (currentState && currentState.status !== "running") port.postMessage({ type: "open-terminal", sessionId: currentState.sessionId });
+  if (currentState && currentState.status !== "running") send({ type: "open-terminal", sessionId: currentState.sessionId });
 });
 $("#copy-command").addEventListener("click", async () => {
   const command = terminalInfo.get(currentState?.sessionId)?.command;
@@ -198,10 +217,10 @@ $("#copy-command").addEventListener("click", async () => {
   setTimeout(() => { $("#copy-command").textContent = "resumeコマンドをコピー"; }, 1500);
 });
 $("#refresh-context").addEventListener("click", () => {
-  if (currentState && currentState.status !== "running") port.postMessage({ type: "refresh-context", sessionId: currentState.sessionId });
+  if (currentState && currentState.status !== "running") send({ type: "refresh-context", sessionId: currentState.sessionId });
 });
 $("#derived-from-link").addEventListener("click", () => {
-  if (currentState?.derivedFrom) port.postMessage({ type: "view-session", sessionId: currentState.derivedFrom.sessionId });
+  if (currentState?.derivedFrom) send({ type: "view-session", sessionId: currentState.derivedFrom.sessionId });
 });
 function loadProjects() {
   chrome.runtime.sendMessage({ type: "bridge-config" }, (config) => {
@@ -213,7 +232,7 @@ $("#promote").addEventListener("toggle", () => { if ($("#promote").open) loadPro
 $("#promote-submit").addEventListener("click", () => {
   const projectId = $("#promote-project").value;
   if (!projectId || !currentState || currentState.status === "running") return;
-  port.postMessage({ type: "promote-session", sessionId: currentState.sessionId, projectId, instruction: $("#promote-instruction").value.trim() });
+  send({ type: "promote-session", sessionId: currentState.sessionId, projectId, instruction: $("#promote-instruction").value.trim() });
   $("#promote-instruction").value = "";
 });
 $("#settings").addEventListener("click", (event) => {
@@ -221,6 +240,8 @@ $("#settings").addEventListener("click", (event) => {
   chrome.runtime.sendMessage({ type: "open-options" });
 });
 
-port.postMessage({ type: "get-sessions" });
-port.postMessage({ type: "get-state" });
+send({ type: "get-sessions" });
+send({ type: "get-state" });
 loadProjects();
+// ponytail: a periodic message keeps the service worker alive while the panel is open.
+setInterval(() => send({ type: "ping" }), 20_000);
