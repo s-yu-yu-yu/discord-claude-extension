@@ -13,16 +13,16 @@
     });
   });
 
+  // Discord renders rows as <li id="chat-messages-<channelId>-<messageId>">.
   function messageIdFromRoot(root) {
-    const listId = root.getAttribute("data-list-item-id") || "";
-    const listMatch = listId.match(/chat-messages-(\d+)/);
-    if (listMatch) return listMatch[1];
+    const rowMatch = (root.id || root.getAttribute("data-list-item-id") || "").match(/chat-messages-\d+-(\d+)/);
+    if (rowMatch) return rowMatch[1];
     return root.getAttribute("data-message-id") || root.id?.match(/(\d{10,})/)?.[1] || "";
   }
 
   function messageRoot(node) {
     if (!(node instanceof Element)) return null;
-    return node.closest('li[data-list-item-id^="chat-messages-"], [data-message-id]');
+    return node.closest('li[id^="chat-messages-"], li[data-list-item-id^="chat-messages-"], [data-message-id]');
   }
 
   function currentChannel() {
@@ -30,7 +30,8 @@
     return {
       guildId: parts[1] || "",
       channelId: parts[2] || "",
-      name: document.querySelector('[class*="title_"] h1, [class*="channelName"], header h1')?.textContent?.trim() || "",
+      // Discord's tab title is `• Discord | "channel" | guild`; the header has no stable h1.
+      name: document.title.match(/"([^"]+)"/)?.[1] || document.title.replace(/^[•\s]*Discord\s*\|\s*/, "").split("|")[0].trim() || "",
     };
   }
 
@@ -65,8 +66,10 @@
 
   function extractMessage(root) {
     const id = messageIdFromRoot(root);
-    const content = root.querySelector('[id^="message-content-"], [class*="messageContent"]');
-    const author = root.querySelector('[id^="message-username-"], [class*="username"]');
+    // The reply preview also contains a message-content-<parentId> node, so prefer the exact id.
+    const content = root.querySelector(`#message-content-${id}`) ||
+      [...root.querySelectorAll('[id^="message-content-"], [class*="messageContent"]')].find((node) => !node.closest('[id^="message-reply-context-"]'));
+    const author = root.querySelector(`#message-username-${id}`) || root.querySelector('[id^="message-username-"], [class*="username"]');
     const time = root.querySelector("time[datetime]");
     return {
       id,
@@ -83,7 +86,10 @@
   function replyParentId(root) {
     const references = root.querySelectorAll('[class*="repliedMessage"], [class*="replying"], [id^="message-reply-context-"], [aria-label*="reply" i]');
     for (const reference of references) {
-      const directId = reference.getAttribute("data-message-id") || reference.id?.match(/(\d{10,})/)?.[1];
+      // message-reply-context-<ownId> wraps message-content-<parentId>.
+      const previewId = reference.querySelector('[id^="message-content-"]')?.id.match(/(\d{10,})/)?.[1];
+      if (previewId) return previewId;
+      const directId = reference.getAttribute("data-message-id") || (!reference.id?.startsWith("message-reply-context-") && reference.id?.match(/(\d{10,})/)?.[1]);
       if (directId) return directId;
       for (const anchor of reference.querySelectorAll("a[href]")) {
         const id = anchor.href.match(/\/(\d{10,})(?:[?#].*)?$/)?.[1];
@@ -95,7 +101,7 @@
 
   function domMessages() {
     const roots = new Set();
-    for (const node of document.querySelectorAll('li[data-list-item-id^="chat-messages-"], [data-message-id]')) {
+    for (const node of document.querySelectorAll('li[id^="chat-messages-"], li[data-list-item-id^="chat-messages-"], [data-message-id]')) {
       const root = messageRoot(node);
       if (root) roots.add(root);
     }
@@ -446,7 +452,8 @@
 
   function addClaudeButton(root) {
     if (!root) return;
-    const toolbar = root.querySelector('[role="toolbar"]');
+    // Discord's hover actions live in div[role="group"].buttons_* > .buttonsInner_*.
+    const toolbar = root.querySelector('[class*="buttonsInner"]') || root.querySelector('[role="toolbar"], [role="group"][class*="buttons"]');
     const existing = root.querySelector(`.${BUTTON_CLASS}`);
     if (existing) {
       // Discord creates its hover toolbar lazily. Move the fallback button into
@@ -480,7 +487,7 @@
       return false;
     }
     const id = message.sourceMessage?.id;
-    const root = id ? document.querySelector(`[data-list-item-id$="-${id}"], [data-message-id="${id}"]`) : null;
+    const root = id ? document.querySelector(`li[id$="-${id}"], [data-list-item-id$="-${id}"], [data-message-id="${id}"]`) : null;
     createComposer(root, {
       mode: "append",
       session: { sessionId: message.sessionId, title: message.sessionTitle },
