@@ -70,6 +70,8 @@ export function normalizeConfig(input = {}) {
     // "" disables the flag so the CLI falls back to the user's Claude Code default.
     claudeModel: typeof input.claudeModel === "string" ? input.claudeModel : "opus",
     claudeEffort: typeof input.claudeEffort === "string" ? input.claudeEffort : "high",
+    // -p cannot show permission prompts; auto mode lets Claude decide like the interactive CLI.
+    permissionMode: typeof input.permissionMode === "string" ? input.permissionMode : "auto",
     terminalCommand: typeof input.terminalCommand === "string" ? input.terminalCommand : DEFAULT_TERMINAL_COMMAND,
     projectRoots: Array.isArray(input.projectRoots)
       ? input.projectRoots

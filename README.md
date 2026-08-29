@@ -51,11 +51,11 @@ node bridge/src/index.js --config bridge/config.json
 
 `actions` を省略すると Bridge 既定の Action Preset（`jira` Jiraに起票、`github-issue` GitHub Issue化、`summarize` 要約、`research` 調査、`critique` 批評、`freeform` 自由入力）を使います。「自由入力」も Bridge から配信される preset で、拡張側に固定の preset はありません。`bridge/config.example.json` に同じ一覧があります。
 
-`claudeCommand` を設定すると、CLI の場所やテスト用のラッパーを変更できます。`claudeModel`（既定 `opus`）と `claudeEffort`（既定 `high`）は CLI の `--model` / `--effort` にそのまま渡ります。`""` を設定すると該当フラグを付けず、Claude Code 側の既定設定に従います。
+`claudeCommand` を設定すると、CLI の場所やテスト用のラッパーを変更できます。`claudeModel`（既定 `opus`）と `claudeEffort`（既定 `high`）は CLI の `--model` / `--effort` にそのまま渡ります。`permissionMode`（既定 `auto`）は `--permission-mode` に渡り、対話 CLI の auto mode と同じ判定で権限を処理します。`""` を設定すると該当フラグを付けず、Claude Code 側の既定設定に従います。
 
 ### 非対話モードのツール許可（MCP / gh など）
 
-Bridge は `claude -p`（非対話）で起動するため、許可ダイアログを出せず、事前に許可されていないツールは自動で拒否されます（回答に「権限が許可されていない」と出ます）。Jira MCP や `gh` を使う Action Preset を動かすには、General Workspace の `.claude/settings.json` に許可ルールを置いてください。
+Bridge は `claude -p`（非対話）で起動するため許可ダイアログを出せません。既定の `permissionMode: "auto"` なら対話 CLI の auto mode と同様に Claude が判定するため、MCP や `gh` もそのまま使えます。`permissionMode` を `default` や `""` にした場合は事前に許可されていないツールが自動で拒否される（回答に「権限が許可されていない」と出る）ので、General Workspace の `.claude/settings.json` に許可ルールを置いてください。
 
 ```json
 {

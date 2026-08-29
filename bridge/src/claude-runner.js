@@ -134,6 +134,7 @@ export function createClaudeRunner(config) {
         const args = argsForPrompt(prompt, resumeId, sessionId, addDirs, { fork });
         if (config.claudeModel) args.push("--model", config.claudeModel);
         if (config.claudeEffort) args.push("--effort", config.claudeEffort);
+        if (config.permissionMode) args.push("--permission-mode", config.permissionMode);
         child = spawn(config.claudeCommand, args, {
           cwd,
           env: config.claudeConfigDir
