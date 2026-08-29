@@ -152,6 +152,7 @@ Side Panel でセッションを開いたまま Discord の別のメッセージ
 | Claude ボタンが出ない | Discord Web をリロード。拡張を再読み込みしたあとも Discord のリロードが必要 |
 | 「Discordコンテキストを更新」で「チャンネルを開きました。もう一度押してください」 | Discord タブが別のチャンネルにいたので移動しただけ。読み込み後にもう一度押せば OK |
 | 「ターミナルで開く」が出ない | Bridge が別 PC で動いているか、`terminalCommand` が空。「resumeコマンドをコピー」を使う |
+| 「〇〇 の実行権限が許可されていない」と返ってくる | 非対話モードでは許可ダイアログが出せないため。`workspace` フォルダの `.claude/settings.json` に `"permissions": { "allow": ["mcp__claude_ai_Atlassian", "Bash(gh issue create:*)"] }` のように事前許可を書く（README「非対話モードのツール許可」参照） |
 | Claude 側でエラー | Side Panel にエラー文が出て、その実行は終わり。同じセッションに追加指示すれば続けられます（自動リトライはしません） |
 
 ---
