@@ -3,8 +3,15 @@
   "name": "Discord Claude Bridge",
   "description": "Send a Discord Source Message to Claude Code through a local Bridge.",
   "version": "0.1.0",
-  "permissions": ["storage", "sidePanel", "clipboardWrite"],
-  "host_permissions": ["http://*/*", "https://*/*"],
+  "permissions": [
+    "storage",
+    "sidePanel",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -18,16 +25,43 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://discord.com/*", "https://canary.discord.com/*", "https://ptb.discord.com/*"],
-      "js": ["page-context.js"],
+      "matches": [
+        "https://discord.com/*",
+        "https://canary.discord.com/*",
+        "https://ptb.discord.com/*"
+      ],
+      "js": [
+        "page-context.js"
+      ],
       "world": "MAIN",
       "run_at": "document_start"
     },
     {
-      "matches": ["https://discord.com/*", "https://canary.discord.com/*", "https://ptb.discord.com/*"],
-      "js": ["context.js", "content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://discord.com/*",
+        "https://canary.discord.com/*",
+        "https://ptb.discord.com/*"
+      ],
+      "js": [
+        "context.js",
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "claude.svg"
+      ],
+      "matches": [
+        "https://discord.com/*",
+        "https://canary.discord.com/*",
+        "https://ptb.discord.com/*"
+      ]
     }
   ]
 }

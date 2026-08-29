@@ -1,19 +1,22 @@
 .dce-message-root { position: relative !important; }
 .dce-claude-button {
-  border: 0;
-  border-radius: 4px;
-  background: #d9f99d;
-  color: #1a2e05;
+  align-items: center;
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: var(--interactive-text-default, #b5bac1);
   cursor: pointer;
-  font: 600 12px/24px sans-serif;
+  display: flex;
   height: 24px;
-  margin: 2px;
-  padding: 0 7px;
-  white-space: nowrap;
+  justify-content: center;
+  min-width: 24px;
+  padding: 2px;
+  width: 24px;
 }
-.dce-claude-button:hover { background: #bef264; }
+.dce-claude-button:hover { background: var(--interactive-background-hover, rgb(255 255 255 / 8%)); color: var(--interactive-text-hover, #fff); }
+.dce-claude-button:active { color: #d97757; }
+.dce-claude-button svg { height: 20px; width: 20px; }
 .dce-message-root > .dce-claude-button { display: none; position: absolute; right: 8px; top: 4px; z-index: 2; }
-.dce-message-root:hover > .dce-claude-button { display: block; }
+.dce-message-root:hover > .dce-claude-button { display: flex; }
 .dce-composer {
   align-items: center;
   background: rgb(0 0 0 / 68%);

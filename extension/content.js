@@ -5,6 +5,8 @@
   const contextTools = globalThis.DceContext;
   let composer;
   let pageContextReady;
+  // claude.svg uses fill="currentColor", so it follows Discord's icon colors.
+  const iconSvg = fetch(chrome.runtime.getURL("claude.svg")).then((response) => response.text()).catch(() => "Claude");
 
   const sendMessage = (message) => new Promise((resolve) => {
     chrome.runtime.sendMessage(message, (response) => {
@@ -462,14 +464,20 @@
       if (toolbar && existing.parentElement !== toolbar) toolbar.append(existing);
       return;
     }
-    const button = element("button", BUTTON_CLASS, "Claude");
-    button.type = "button";
+    // Mirrors Discord's own hover-bar buttons (div[role=button] with a 20px icon).
+    const button = element("div", BUTTON_CLASS);
+    button.setAttribute("role", "button");
+    button.tabIndex = 0;
+    button.setAttribute("aria-label", "Claude Code に送る");
     button.title = "この Source Message を Claude Code に送る";
-    button.addEventListener("click", (event) => {
+    iconSvg.then((svg) => { button.innerHTML = svg; });
+    const open = (event) => {
       event.preventDefault();
       event.stopPropagation();
       createComposer(root);
-    });
+    };
+    button.addEventListener("click", open);
+    button.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") open(event); });
     if (toolbar) toolbar.append(button);
     else {
       root.classList.add("dce-message-root");
