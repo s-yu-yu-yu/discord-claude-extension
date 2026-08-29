@@ -1,6 +1,9 @@
 const ports = new Set();
+const panelViews = new Map();
 const states = new Map();
 let activeSessionId = null;
+let storageWrite = Promise.resolve();
+const pendingPersists = new Map();
 
 function extensionUrl(file) {
   return chrome.runtime.getURL(file);
@@ -33,14 +36,188 @@ function sendToPanels(message) {
   }
 }
 
+function stateKeys(state) {
+  return new Set([state.sessionId, state.claudeSessionId, ...(state.previousSessionIds || [])].filter(Boolean));
+}
+
+function serializeState(state) {
+  return {
+    sessionId: state.sessionId,
+    claudeSessionId: state.claudeSessionId,
+    cwd: state.cwd,
+    title: state.title,
+    sourceMessage: state.sourceMessage,
+    instruction: state.instruction,
+    actionId: state.actionId,
+    text: state.text,
+    turns: state.turns,
+    tools: state.tools,
+    status: state.status,
+    unread: Boolean(state.unread),
+    error: state.error,
+    createdAt: state.createdAt,
+    updatedAt: state.updatedAt,
+  };
+}
+
+function recordFromState(state) {
+  return serializeState(state);
+}
+
+async function setBadge(sessions) {
+  const unread = sessions.filter((session) => session.status === "complete" && session.unread).length;
+  try {
+    await chrome.action.setBadgeText({ text: unread ? String(unread) : "" });
+    await chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
+  } catch {
+    // Badge APIs are unavailable in a few Chrome test shells.
+  }
+}
+
+function writeState(state) {
+  storageWrite = storageWrite.then(async () => {
+    const record = recordFromState(state);
+    // Do not create an index entry before the Bridge has assigned a real ID.
+    if (record.sessionId?.startsWith("pending-")) return;
+    const { sessions = [] } = await chrome.storage.local.get({ sessions: [] });
+    const keys = stateKeys(state);
+    const next = sessions.filter((item) => !keys.has(item.sessionId) && !keys.has(item.claudeSessionId));
+    next.push(record);
+    await chrome.storage.local.set({ sessions: next });
+    await setBadge(next);
+  }).catch(() => {});
+  return storageWrite;
+}
+
+function persistState(state, { immediate = false } = {}) {
+  const key = state.sessionId;
+  const existing = pendingPersists.get(key);
+  if (existing) clearTimeout(existing);
+  if (immediate) {
+    pendingPersists.delete(key);
+    return writeState(state);
+  }
+  const timer = setTimeout(() => {
+    pendingPersists.delete(key);
+    writeState(state);
+  }, 200);
+  pendingPersists.set(key, timer);
+  return storageWrite;
+}
+
+function stateFromRecord(record) {
+  return {
+    sessionId: record.sessionId || record.claudeSessionId,
+    claudeSessionId: record.claudeSessionId || record.sessionId,
+    cwd: record.cwd,
+    title: record.title || "Claude Session",
+    sourceMessage: record.sourceMessage,
+    instruction: record.instruction || "",
+    actionId: record.actionId,
+    text: record.text || "",
+    turns: Array.isArray(record.turns) ? record.turns : [],
+    tools: record.tools || [],
+    status: record.status || "complete",
+    unread: Boolean(record.unread),
+    error: record.error || "",
+    createdAt: record.createdAt || Date.now(),
+    updatedAt: record.updatedAt || record.createdAt || Date.now(),
+    previousSessionIds: [],
+  };
+}
+
+async function readStoredSessions() {
+  const { sessions = [] } = await chrome.storage.local.get({ sessions: [] });
+  return Array.isArray(sessions) ? sessions : [];
+}
+
+async function reconcileSessions() {
+  const stored = await readStoredSessions();
+  if (stored.length === 0) {
+    await setBadge([]);
+    return [];
+  }
+  try {
+    const response = await bridgeFetch("/sessions/reconcile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessions: stored.map((item) => ({ sessionId: item.claudeSessionId || item.sessionId, cwd: item.cwd })) }),
+    });
+    if (!response.ok) throw new Error("Session reconciliation failed.");
+    const { sessions: checked = [] } = await response.json();
+    const byId = new Map(checked.map((item) => [item.sessionId, item]));
+    const next = stored
+      .map((item) => {
+        const id = item.claudeSessionId || item.sessionId;
+        const found = byId.get(id);
+        if (!found?.exists) return null;
+        return {
+          ...item,
+          sessionId: id,
+          claudeSessionId: id,
+          cwd: found.cwd || item.cwd,
+          // The local index owns the Claude-generated title once the first
+          // turn has streamed. Reconciliation should only validate existence
+          // and refresh timestamps, not replace that title with a fallback.
+          title: item.title || found.title,
+          updatedAt: found.updatedAt || item.updatedAt,
+        };
+      })
+      .filter(Boolean);
+    const valid = new Set(next.map((item) => item.sessionId));
+    for (const [id] of states) if (!valid.has(id)) states.delete(id);
+    if (activeSessionId && !valid.has(activeSessionId)) activeSessionId = null;
+    await chrome.storage.local.set({ sessions: next });
+    await setBadge(next);
+    return next;
+  } catch {
+    // A temporary Bridge outage must not erase the local index. The next open
+    // retries reconciliation and removes only confirmed-missing sessions.
+    await setBadge(stored);
+    return stored;
+  }
+}
+
+async function stateForId(sessionId) {
+  if (!sessionId) return null;
+  const inMemory = states.get(sessionId);
+  if (inMemory) return inMemory;
+  const stored = await readStoredSessions();
+  const record = stored.find((item) => item.sessionId === sessionId || item.claudeSessionId === sessionId);
+  if (!record) return null;
+  const state = stateFromRecord(record);
+  states.set(state.sessionId, state);
+  return state;
+}
+
+function isSessionViewed(sessionId) {
+  for (const viewedId of panelViews.values()) if (viewedId === sessionId) return true;
+  return false;
+}
+
+async function markRead(port, state) {
+  panelViews.set(port, state.sessionId);
+  if (state.unread) {
+    state.unread = false;
+    await persistState(state, { immediate: true });
+  }
+}
+
 function applyStreamEvent(state, event, data) {
   if (event === "session") {
+    const previousId = state.sessionId;
     if (data.sessionId && data.sessionId !== state.sessionId) {
-      states.delete(state.sessionId);
+      state.previousSessionIds = [...(state.previousSessionIds || []), previousId];
+      states.delete(previousId);
       state.sessionId = data.sessionId;
       states.set(state.sessionId, state);
-      activeSessionId = state.sessionId;
+      for (const [port, viewedId] of panelViews) if (viewedId === previousId) panelViews.set(port, state.sessionId);
+      if (activeSessionId === previousId) activeSessionId = state.sessionId;
     }
+    state.claudeSessionId = data.claudeSessionId || data.sessionId || state.claudeSessionId;
+    state.cwd = data.cwd || state.cwd;
+  } else if (event === "title") {
+    if (data.title) state.title = data.title;
   } else if (event === "delta") {
     state.text += data.text || "";
   } else if (event === "tool") {
@@ -48,28 +225,16 @@ function applyStreamEvent(state, event, data) {
   } else if (event === "complete") {
     state.status = data.stopped ? "stopped" : (data.isError ? "error" : "complete");
     if (data.text && !state.text) state.text = data.text;
+    state.unread = state.status === "complete" && !isSessionViewed(state.sessionId);
   } else if (event === "error") {
     state.status = "error";
     state.error = data.message || "Claude Codeでエラーが発生しました。";
   } else if (event === "done" && data.status) {
     state.status = data.status;
   }
+  state.updatedAt = Date.now();
+  persistState(state, { immediate: ["session", "title", "complete", "error", "done"].includes(event) });
   sendToPanels({ type: "stream-event", sessionId: state.sessionId, event, data, state: serializeState(state) });
-}
-
-function serializeState(state) {
-  return {
-    sessionId: state.sessionId,
-    title: state.title,
-    sourceMessage: state.sourceMessage,
-    instruction: state.instruction,
-    actionId: state.actionId,
-    text: state.text,
-    tools: state.tools,
-    status: state.status,
-    error: state.error,
-    createdAt: state.createdAt,
-  };
 }
 
 async function consumeSse(response, state) {
@@ -105,9 +270,7 @@ async function consumeSse(response, state) {
     }
     if (done) break;
   }
-  if (buffer) {
-    if (buffer.startsWith("data:")) dataLines.push(buffer.slice(5).trim());
-  }
+  if (buffer.startsWith("data:")) dataLines.push(buffer.slice(5).trim());
   flush();
 }
 
@@ -119,37 +282,40 @@ async function startStream(state, requestPath, body) {
       body: JSON.stringify(body),
     });
     await consumeSse(response, state);
-  } catch (error) {
+  } catch {
     applyStreamEvent(state, "error", { message: "Claude Bridgeに接続できません。接続設定を確認してください。" });
     applyStreamEvent(state, "done", { status: "error" });
   }
 }
 
 async function openPanel(windowId) {
-  try {
-    await chrome.sidePanel.open({ windowId });
-  } catch {
-    // Chrome may reject an open outside a user gesture; the action remains available.
-  }
+  try { await chrome.sidePanel.open({ windowId }); } catch { /* Chrome may reject a delayed/invalid window gesture. */ }
 }
 
 async function startSession(message, sender, sendResponse) {
   const state = {
     sessionId: `pending-${crypto.randomUUID()}`,
+    claudeSessionId: null,
+    cwd: null,
     title: message.payload.instruction?.trim().slice(0, 48) || "Discord Source Message",
     sourceMessage: message.payload.sourceMessage,
     instruction: message.payload.instruction || "",
     actionId: message.payload.actionId,
     text: "",
+    turns: message.payload.instruction?.trim() ? [{ role: "user", text: message.payload.instruction.trim() }] : [],
     tools: [],
     status: "running",
+    unread: false,
     createdAt: Date.now(),
+    updatedAt: Date.now(),
     error: "",
+    previousSessionIds: [],
   };
   states.set(state.sessionId, state);
   activeSessionId = state.sessionId;
-  // Keep this call directly in the user-triggered message path. Chrome can
-  // reject a delayed sidePanel.open after an asynchronous health check.
+  sendToPanels({ type: "state", state: serializeState(state) });
+  // Start while still in the user-triggered message path; do not wait for a
+  // Bridge health request before asking Chrome to open the Side Panel.
   const panelPromise = openPanel(sender.tab?.windowId);
   try {
     const health = await bridgeFetch("/health");
@@ -157,23 +323,63 @@ async function startSession(message, sender, sendResponse) {
   } catch {
     states.delete(state.sessionId);
     sendResponse(settingsError("Claude Bridgeに接続できません。接続設定を確認してください。"));
+    sendToPanels({ type: "state", state: null });
     return;
   }
   await panelPromise;
   sendResponse({ ok: true, sessionId: state.sessionId });
-  // The panel can render from the in-memory state while this request is streaming.
   startStream(state, "/sessions", message.payload);
 }
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "claude-sidepanel") return;
   ports.add(port);
-  port.onDisconnect.addListener(() => ports.delete(port));
+  port.onDisconnect.addListener(() => {
+    ports.delete(port);
+    panelViews.delete(port);
+  });
   port.onMessage.addListener(async (message) => {
-    if (message.type === "get-state") {
-      const state = states.get(message.sessionId || activeSessionId);
-      if (state) port.postMessage({ type: "state", state: serializeState(state) });
-      else port.postMessage({ type: "state", state: null });
+    if (message.type === "get-sessions") {
+      port.postMessage({ type: "sessions", sessions: await reconcileSessions() });
+    } else if (message.type === "get-state" || message.type === "view-session") {
+      const state = await stateForId(message.sessionId || activeSessionId);
+      if (state) {
+        activeSessionId = state.sessionId;
+        await markRead(port, state);
+        port.postMessage({ type: "state", state: serializeState(state) });
+      } else port.postMessage({ type: "state", state: null });
+    } else if (message.type === "continue-session") {
+      const state = await stateForId(message.sessionId);
+      if (!state) { port.postMessage({ type: "command-error", error: "Claude Sessionが見つかりません。" }); return; }
+      if (state.status === "running") { port.postMessage({ type: "command-error", error: "この Claude Session は実行中です。" }); return; }
+      const previousStatus = state.status;
+      state.status = "running";
+      state.error = "";
+      if (state.text) state.turns.push({ role: "assistant", text: state.text, status: previousStatus });
+      if (message.instruction?.trim()) state.turns.push({ role: "user", text: message.instruction.trim() });
+      state.text = "";
+      state.tools = [];
+      state.unread = false;
+      activeSessionId = state.sessionId;
+      await persistState(state, { immediate: true });
+      sendToPanels({ type: "state", state: serializeState(state) });
+      startStream(state, `/sessions/${encodeURIComponent(state.sessionId)}/messages`, {
+        instruction: message.instruction,
+        cwd: state.cwd,
+        sourceMessage: state.sourceMessage,
+        messageContext: state.sourceMessage ? [state.sourceMessage] : [],
+        actionId: state.actionId,
+        title: state.title,
+      });
+    } else if (message.type === "stop-session") {
+      const state = await stateForId(message.sessionId);
+      if (!state) { port.postMessage({ type: "command-error", error: "Claude Sessionが見つかりません。" }); return; }
+      try {
+        const response = await bridgeFetch(`/sessions/${encodeURIComponent(state.sessionId)}`, { method: "DELETE" });
+        if (!response.ok) throw new Error("stop failed");
+      } catch {
+        port.postMessage({ type: "command-error", error: "実行を停止できませんでした。" });
+      }
     }
   });
 });
@@ -200,4 +406,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+  readStoredSessions().then(setBadge).catch(() => {});
 });

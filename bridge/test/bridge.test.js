@@ -3,14 +3,14 @@ import { chmod, mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { normalizeConfig, listProjects } from "../src/config.js";
+import { claudeProjectDirectory, normalizeConfig, listProjects, readClaudeSessionMetadata } from "../src/config.js";
 import { buildPrompt } from "../src/prompt.js";
 import { createBridgeServer } from "../src/server.js";
-import { argsForPrompt, createClaudeRunner, createTextDeltaAccumulator, normalizeClaudeEvent } from "../src/claude-runner.js";
+import { argsForPrompt, createClaudeRunner, createTextDeltaAccumulator, createTitleStreamFilter, normalizeClaudeEvent } from "../src/claude-runner.js";
 
-async function startTestServer(runnerFactory) {
+async function startTestServer(runnerFactory, overrides = {}) {
   const workspace = await mkdtemp(path.join(os.tmpdir(), "discord-claude-"));
-  const config = normalizeConfig({ workspace, actions: [{ id: "research", label: "調査", prompt: "調査する" }] });
+  const config = normalizeConfig({ workspace, actions: [{ id: "research", label: "調査", prompt: "調査する" }], ...overrides });
   const server = createBridgeServer({ config, runnerFactory });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -31,6 +31,9 @@ test("buildPrompt preserves Source Message metadata and links", () => {
   assert.match(prompt, /#engineering/);
   assert.match(prompt, /https:\/\/discord\.com\/channels\/1\/2\/3/);
   assert.match(prompt, /原因を確認/);
+  assert.match(prompt, /\[DCE_SESSION_TITLE\]タイトル\[\/DCE_SESSION_TITLE\]/);
+  assert.equal(prompt.match(/Source Link:/g)?.length, 1);
+  assert.doesNotMatch(prompt, /## Message Context/);
 });
 
 test("normalizes Claude partial stream events and avoids assistant full-text duplication", () => {
@@ -52,6 +55,35 @@ test("normalizes Claude partial stream events and avoids assistant full-text dup
   assert.equal(accumulator.accept(full[0]), "lo");
   assert.equal(accumulator.getText(), "Hello");
   assert.ok(argsForPrompt("prompt").includes("--include-partial-messages"));
+  assert.deepEqual(argsForPrompt("follow-up", "123e4567-e89b-12d3-a456-426614174000").slice(-2), ["--resume", "123e4567-e89b-12d3-a456-426614174000"]);
+  assert.deepEqual(argsForPrompt("first", undefined, "123e4567-e89b-12d3-a456-426614174000").slice(-2), ["--session-id", "123e4567-e89b-12d3-a456-426614174000"]);
+});
+
+test("extracts a Claude-generated title marker and does not filter resume output", () => {
+  const titles = [];
+  const filter = createTitleStreamFilter((title) => titles.push(title));
+  assert.equal(filter.accept("[DCE_SESSION_TITLE]調査タイトル[/DCE_SESSION_TITLE]\n結"), "結");
+  assert.deepEqual(titles, ["調査タイトル"]);
+  assert.equal(filter.accept("果"), "果");
+});
+
+test("Claude session metadata uses the generated title marker", async () => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "discord-claude-data-"));
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "discord-claude-workspace-"));
+  const sessionId = "123e4567-e89b-12d3-a456-426614174000";
+  const directory = claudeProjectDirectory(workspace, dataDir);
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, `${sessionId}.jsonl`), JSON.stringify({
+    slug: "古いCLI slug",
+    type: "assistant",
+    message: { content: [{ type: "text", text: "[DCE_SESSION_TITLE]生成タイトル[/DCE_SESSION_TITLE]\n回答" }] },
+  }));
+  const metadata = readClaudeSessionMetadata(workspace, sessionId, dataDir);
+  assert.equal(metadata.exists, true);
+  assert.equal(metadata.sessionId, sessionId);
+  assert.equal(metadata.cwd, workspace);
+  assert.equal(metadata.title, "生成タイトル");
+  assert.ok(metadata.updatedAt > 0);
 });
 
 test("ignores non-JSON stdout after the Claude result", async () => {
@@ -59,9 +91,9 @@ test("ignores non-JSON stdout after the Claude result", async () => {
   const fakeCli = path.join(workspace, "fake-claude.mjs");
   await writeFile(fakeCli, `#!/usr/bin/env node
 const lines = [
-  JSON.stringify({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "O" } } }),
-  JSON.stringify({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "K" } } }),
-  JSON.stringify({ type: "result", result: "OK" }),
+  JSON.stringify({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "[DCE_SESSION_TITLE]警告除外" } } }),
+  JSON.stringify({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "[/DCE_SESSION_TITLE]\\nOK" } } }),
+  JSON.stringify({ type: "result", result: "[DCE_SESSION_TITLE]警告除外[/DCE_SESSION_TITLE]\\nOK" }),
   "Client.listTools() called but server does not advertise tools capability - returning empty list",
 ];
 for (const line of lines) console.log(line);
@@ -70,8 +102,71 @@ for (const line of lines) console.log(line);
   const runner = createClaudeRunner({ claudeCommand: fakeCli });
   const events = [];
   const result = await runner.run({ prompt: "test", cwd: workspace, onEvent: (event) => events.push(event) });
-  assert.deepEqual(events.filter((event) => event.type === "delta").map((event) => event.text), ["O", "K"]);
+  assert.deepEqual(events.filter((event) => event.type === "delta").map((event) => event.text), ["OK"]);
+  assert.deepEqual(events.filter((event) => event.type === "title").map((event) => event.title), ["警告除外"]);
   assert.equal(result.text, "OK");
+});
+
+test("passes the configured Claude config directory to the CLI", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "discord-claude-config-dir-"));
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "discord-claude-data-dir-"));
+  const fakeCli = path.join(workspace, "fake-claude.mjs");
+  await writeFile(fakeCli, `#!/usr/bin/env node
+const text = "[DCE_SESSION_TITLE]設定確認[/DCE_SESSION_TITLE]\\n" + process.env.CLAUDE_CONFIG_DIR;
+console.log(JSON.stringify({ type: "result", result: text }));
+`);
+  await chmod(fakeCli, 0o755);
+  const runner = createClaudeRunner({ claudeCommand: fakeCli, claudeConfigDir: dataDir });
+  const result = await runner.run({ prompt: "test", cwd: workspace, onEvent: () => {} });
+  assert.equal(result.text, dataDir);
+});
+
+test("keeps the inherited Claude config environment by default", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "discord-claude-default-config-"));
+  const fakeCli = path.join(workspace, "fake-claude.mjs");
+  await writeFile(fakeCli, `#!/usr/bin/env node
+const inherited = process.env.CLAUDE_CONFIG_DIR || "__UNSET__";
+const text = "[DCE_SESSION_TITLE]既存設定確認[/DCE_SESSION_TITLE]\\n" + inherited;
+console.log(JSON.stringify({ type: "result", result: text }));
+`);
+  await chmod(fakeCli, 0o755);
+  const runner = createClaudeRunner({ claudeCommand: fakeCli });
+  const result = await runner.run({ prompt: "test", cwd: workspace, onEvent: () => {} });
+  assert.equal(result.text, process.env.CLAUDE_CONFIG_DIR || "__UNSET__");
+  const defaultRoot = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  assert.equal(
+    claudeProjectDirectory(workspace),
+    path.join(defaultRoot, "projects", workspace.split(path.sep).join("-")),
+  );
+  assert.equal(normalizeConfig({}).claudeConfigDir, undefined);
+});
+
+test("resume output streams before the completion event", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "discord-claude-resume-"));
+  const fakeCli = path.join(workspace, "fake-claude.mjs");
+  await writeFile(fakeCli, `#!/usr/bin/env node
+console.log(JSON.stringify({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "R" } } }));
+setTimeout(() => console.log(JSON.stringify({ type: "result", result: "R" })), 500);
+`);
+  await chmod(fakeCli, 0o755);
+  const runner = createClaudeRunner({ claudeCommand: fakeCli });
+  const events = [];
+  let resolveDelta;
+  const deltaReady = new Promise((resolve) => { resolveDelta = resolve; });
+  const completion = runner.run({
+    prompt: "follow-up",
+    cwd: workspace,
+    resumeId: "123e4567-e89b-12d3-a456-426614174000",
+    onEvent: (event) => {
+      events.push(event);
+      if (event.type === "delta") resolveDelta();
+    },
+  });
+  await deltaReady;
+  assert.deepEqual(events.filter((event) => event.type === "delta").map((event) => event.text), ["R"]);
+  assert.equal(events.some((event) => event.type === "complete"), false);
+  runner.stop();
+  await completion;
 });
 
 test("configured project roots expose only git directories", async () => {
@@ -87,6 +182,7 @@ test("Bridge streams session, delta, tool and completion events over SSE", async
   const runnerFactory = () => ({
     async run({ onEvent }) {
       onEvent({ type: "session", sessionId: "claude-session-1" });
+      onEvent({ type: "title", title: "生成されたタイトル" });
       onEvent({ type: "tool", name: "Read", detail: "README.md" });
       onEvent({ type: "delta", text: "# Done" });
       onEvent({ type: "complete" });
@@ -111,9 +207,113 @@ test("Bridge streams session, delta, tool and completion events over SSE", async
   assert.equal(response.status, 200);
   assert.match(body, /event: session/);
   assert.match(body, /event: tool/);
+  assert.match(body, /生成されたタイトル/);
   assert.match(body, /event: delta/);
   assert.match(body, /# Done/);
   assert.match(body, /event: done/);
+});
+
+test("Bridge resumes a stateless session using its Claude session ID", async (t) => {
+  const sessionId = "123e4567-e89b-12d3-a456-426614174000";
+  let receivedResumeId;
+  let receivedCwd;
+  const runnerFactory = () => ({
+    async run({ resumeId, cwd, onEvent }) {
+      receivedResumeId = resumeId;
+      receivedCwd = cwd;
+      onEvent({ type: "delta", text: "続き" });
+      onEvent({ type: "complete", text: "続き" });
+      return { text: "続き" };
+    },
+    stop() { return true; },
+  });
+  const { server, base, config } = await startTestServer(runnerFactory);
+  t.after(() => server.close());
+  const response = await fetch(`${base}/sessions/${sessionId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cwd: config.workspace, instruction: "続けて" }),
+  });
+  const body = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(receivedResumeId, sessionId);
+  assert.equal(receivedCwd, config.workspace);
+  assert.match(body, /続き/);
+});
+
+test("Bridge resets the turn accumulator after stop before resuming", async (t) => {
+  let runCount = 0;
+  let resolveStopped;
+  const resumeIds = [];
+  const runCwds = [];
+  const claudeSessionId = "123e4567-e89b-12d3-a456-426614174000";
+  let firstRunStarted;
+  const firstRunReady = new Promise((resolve) => { firstRunStarted = resolve; });
+  const runnerFactory = () => ({
+    run({ resumeId, cwd, onEvent }) {
+      runCount += 1;
+      resumeIds.push(resumeId);
+      runCwds.push(cwd);
+      if (runCount === 1) {
+        onEvent({ type: "session", sessionId: claudeSessionId });
+        onEvent({ type: "delta", text: "old partial" });
+        firstRunStarted();
+        return new Promise((resolve) => { resolveStopped = () => resolve({ stopped: true, text: "old partial" }); });
+      }
+      onEvent({ type: "delta", text: "new partial" });
+      onEvent({ type: "complete", text: "new answer" });
+      return Promise.resolve({ text: "new answer" });
+    },
+    stop() { resolveStopped?.(); return true; },
+  });
+  const { server, base } = await startTestServer(runnerFactory);
+  t.after(() => server.close());
+  const initialResponsePromise = fetch(`${base}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instruction: "最初の指示", sourceMessage: { text: "hello", sourceLink: "https://discord.com/channels/1/2/3" } }),
+  });
+  await firstRunReady;
+  const sessionId = [...server.sessions.keys()][0];
+  const stopped = await fetch(`${base}/sessions/${sessionId}`, { method: "DELETE" });
+  assert.equal(stopped.status, 200);
+  await (await initialResponsePromise).text();
+
+  const followResponse = await fetch(`${base}/sessions/${sessionId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instruction: "続き", cwd: server.sessions.get(sessionId).cwd }),
+  });
+  const body = await followResponse.text();
+  assert.equal(followResponse.status, 200);
+  assert.match(body, /new partial/);
+  assert.match(body, /new answer/);
+  assert.doesNotMatch(body, /old partial/);
+  assert.deepEqual(resumeIds, [null, claudeSessionId]);
+  assert.equal(runCwds[0], runCwds[1]);
+});
+
+test("Bridge reconciliation reports existing Claude JSONL sessions only", async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "discord-claude-reconcile-"));
+  const existingId = "123e4567-e89b-12d3-a456-426614174000";
+  const missingId = "123e4567-e89b-12d3-a456-426614174001";
+  const { server, base, config } = await startTestServer(() => ({ run: async () => ({}), stop() {} }), { claudeConfigDir: dataDir });
+  t.after(() => server.close());
+  const directory = claudeProjectDirectory(config.workspace, dataDir);
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, `${existingId}.jsonl`), JSON.stringify({ type: "user", message: { content: "存在するセッション" } }) + "\n");
+  const response = await fetch(`${base}/sessions/reconcile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessions: [
+      { sessionId: existingId, cwd: config.workspace },
+      { sessionId: missingId, cwd: config.workspace },
+    ] }),
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.sessions.find((item) => item.sessionId === existingId).exists, true);
+  assert.equal(body.sessions.find((item) => item.sessionId === missingId).exists, false);
 });
 
 test("Bridge rejects a request without a Source Link", async (t) => {

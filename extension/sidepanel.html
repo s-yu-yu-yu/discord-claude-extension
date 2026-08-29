@@ -15,6 +15,7 @@
     <a id="settings" href="options.html">接続設定</a>
   </header>
   <main>
+    <section id="session-list" class="session-list" aria-label="Claude Session一覧"></section>
     <section id="empty" class="empty">Discordの Claude ボタンから Source Message を送ると、ここに結果が表示されます。</section>
     <section id="conversation" hidden>
       <div id="status" class="status">準備中</div>
@@ -22,7 +23,13 @@
       <article id="response" class="response" aria-live="polite"></article>
       <div class="response-actions">
         <button id="copy" type="button">最終回答をコピー</button>
+        <button id="stop" type="button">停止</button>
       </div>
+      <form id="continue-form" class="continue-form">
+        <label for="instruction">追加指示</label>
+        <textarea id="instruction" rows="3" placeholder="Current Session に追加指示を送る"></textarea>
+        <button type="submit">送信</button>
+      </form>
     </section>
   </main>
   <script src="sidepanel.js"></script>

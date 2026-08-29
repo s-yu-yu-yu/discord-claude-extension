@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { extractSessionTitle } from "./prompt.js";
 
 export const DEFAULT_ACTIONS = [
   {
@@ -36,10 +37,15 @@ export function normalizeConfig(input = {}) {
         }))
     : DEFAULT_ACTIONS;
 
+  const claudeConfigDir = typeof input.claudeConfigDir === "string" && input.claudeConfigDir.trim()
+    ? expandHome(input.claudeConfigDir.trim())
+    : undefined;
+
   return {
     host: typeof input.host === "string" && input.host ? input.host : "127.0.0.1",
     port: Number.isInteger(input.port) && input.port > 0 ? input.port : 3456,
     workspace: expandHome(input.workspace) || path.join(os.homedir(), "claude-discord-workspace"),
+    claudeConfigDir,
     claudeCommand: typeof input.claudeCommand === "string" && input.claudeCommand ? input.claudeCommand : "claude",
     projectRoots: Array.isArray(input.projectRoots)
       ? input.projectRoots
@@ -88,4 +94,68 @@ function readdirSafe(directory) {
 
 export function listProjects(config) {
   return config.projectRoots.flatMap((root) => walkProjects(root.path, root.depth ?? config.projectDepth));
+}
+
+function defaultClaudeConfigDir() {
+  return expandHome(process.env.CLAUDE_CONFIG_DIR) || path.join(os.homedir(), ".claude");
+}
+
+// Claude Code 2.1.251 stores resumable sessions as <session-id>.jsonl under a
+// project directory whose name is the cwd with path separators replaced by '-'.
+export function claudeProjectDirectory(cwd, claudeConfigDir) {
+  const configDir = claudeConfigDir || defaultClaudeConfigDir();
+  return path.join(configDir, "projects", cwd.split(path.sep).join("-"));
+}
+
+function validSessionId(sessionId) {
+  return typeof sessionId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId);
+}
+
+function contentText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.filter((part) => part && typeof part.text === "string").map((part) => part.text).join("");
+}
+
+export function readClaudeSessionMetadata(cwd, sessionId, claudeConfigDir) {
+  if (!validSessionId(sessionId)) return { exists: false };
+  const file = path.join(claudeProjectDirectory(cwd, claudeConfigDir), sessionId + ".jsonl");
+  if (!existsSync(file)) return { exists: false };
+  let slug;
+  let generatedTitle;
+  let firstUserText;
+  let updatedAt;
+  try {
+    updatedAt = statSync(file).mtimeMs;
+    for (const line of readFileSync(file, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      let entry;
+      try { entry = JSON.parse(line); } catch { continue; }
+      slug ||= entry.slug;
+      const content = contentText(entry.message?.content || entry.message);
+      if (!firstUserText && entry.type === "user") firstUserText = content;
+      // The initial user prompt contains the marker syntax as an example.
+      // Only assistant output is eligible to become a generated title.
+      if (entry.type === "assistant") {
+        generatedTitle ||= extractSessionTitle(content)?.title;
+        generatedTitle ||= extractSessionTitle(contentText(entry.content))?.title;
+      }
+    }
+  } catch {
+    return { exists: false };
+  }
+  return {
+    exists: true,
+    sessionId,
+    cwd,
+    // The marker is the Bridge's generated-title contract. Claude's `slug`
+    // field is retained only as a compatibility fallback for older sessions.
+    title: generatedTitle || slug || firstUserText?.replace(/\s+/g, " ").trim().slice(0, 48) || `Claude Session ${sessionId.slice(0, 8)}`,
+    updatedAt,
+  };
+}
+
+export function isConfiguredCwd(config, cwd) {
+  if (cwd === config.workspace) return true;
+  return listProjects(config).some((project) => project.path === cwd);
 }

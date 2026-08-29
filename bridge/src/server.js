@@ -2,7 +2,7 @@ import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { listProjects } from "./config.js";
+import { isConfiguredCwd, listProjects, readClaudeSessionMetadata } from "./config.js";
 import { createClaudeRunner } from "./claude-runner.js";
 import { buildPrompt, validateSessionRequest } from "./prompt.js";
 
@@ -63,6 +63,13 @@ function resolveCwd(config, projectId) {
   return selected.path;
 }
 
+function resolveStoredCwd(config, cwd) {
+  if (typeof cwd !== "string" || !isConfiguredCwd(config, cwd)) {
+    throw new Error("The stored cwd is not configured in the Bridge.");
+  }
+  return cwd;
+}
+
 function actionFor(config, actionId) {
   if (!actionId) return undefined;
   return config.actions.find((action) => action.id === actionId);
@@ -75,8 +82,8 @@ function publicConfig(config) {
   };
 }
 
-function makeSession(config, body, bridgeId, runnerFactory) {
-  const cwd = resolveCwd(config, body.projectId);
+function makeSession(config, body, bridgeId, runnerFactory, { resume = false } = {}) {
+  const cwd = body.cwd ? resolveStoredCwd(config, body.cwd) : resolveCwd(config, body.projectId);
   mkdirSync(cwd, { recursive: true });
   return {
     id: bridgeId,
@@ -85,7 +92,9 @@ function makeSession(config, body, bridgeId, runnerFactory) {
     messageContext: body.messageContext || [body.sourceMessage],
     actionId: body.actionId,
     projectId: body.projectId || null,
-    claudeSessionId: null,
+    claudeSessionId: resume ? bridgeId : null,
+    title: body.title || body.instruction?.trim().slice(0, 48) || "Discord Source Message",
+    wasResumed: resume,
     runner: runnerFactory(config),
     status: "running",
     text: "",
@@ -93,11 +102,25 @@ function makeSession(config, body, bridgeId, runnerFactory) {
 }
 
 async function runAndStream({ config, session, prompt, res, closeWhenDone = true }) {
+  // `session` survives across follow-up turns. Keep the response accumulator
+  // scoped to this turn so a stopped turn cannot leak its partial text into
+  // the next completion.
+  session.text = "";
+  session.tools = [];
   let didComplete = false;
+  let didEmitTitle = false;
   const emit = (event) => {
     if (event.type === "session") {
       session.claudeSessionId = event.sessionId;
-      sendSse(res, "session", { sessionId: session.id, claudeSessionId: event.sessionId });
+      sendSse(res, "session", { sessionId: session.id, claudeSessionId: event.sessionId, cwd: session.cwd });
+      return;
+    }
+    if (event.type === "title") {
+      if (event.title) {
+        didEmitTitle = true;
+        session.title = event.title;
+        sendSse(res, "title", { title: event.title });
+      }
       return;
     }
     if (event.type === "delta") {
@@ -121,9 +144,15 @@ async function runAndStream({ config, session, prompt, res, closeWhenDone = true
       prompt,
       cwd: session.cwd,
       resumeId: session.claudeSessionId,
+      sessionId: session.claudeSessionId ? undefined : session.id,
       onEvent: emit,
     });
     session.status = result.stopped ? "stopped" : "complete";
+    const metadata = readClaudeSessionMetadata(session.cwd, session.claudeSessionId || session.id, config.claudeConfigDir);
+    if (!didEmitTitle && metadata.exists && metadata.title) {
+      session.title = metadata.title;
+      sendSse(res, "title", { title: metadata.title });
+    }
     if (!didComplete) sendSse(res, "complete", { text: session.text || result.text || "", stopped: Boolean(result.stopped) });
     sendSse(res, "done", { status: session.status, sessionId: session.id });
   } catch (error) {
@@ -164,13 +193,32 @@ export function createBridgeServer({ config, runnerFactory = createClaudeRunner 
       return;
     }
 
-    const continuationMatch = pathname.match(/^\/sessions\/([^/]+)\/messages$/);
-    if (req.method === "POST" && continuationMatch) {
-      const session = sessions.get(decodeURIComponent(continuationMatch[1]));
-      if (!session) {
-        json(res, 404, { error: "Claude Session not found in this Bridge process." });
+    if (req.method === "POST" && pathname === "/sessions/reconcile") {
+      let body;
+      try {
+        body = await readJson(req);
+      } catch (error) {
+        json(res, 400, { error: error.message });
         return;
       }
+      if (!Array.isArray(body.sessions)) {
+        json(res, 400, { error: "sessions must be an array." });
+        return;
+      }
+      const reconciled = body.sessions
+        .filter((item) => item && typeof item.sessionId === "string" && typeof item.cwd === "string")
+        .map((item) => {
+          if (!isConfiguredCwd(config, item.cwd)) return { sessionId: item.sessionId, cwd: item.cwd, exists: false };
+          const metadata = readClaudeSessionMetadata(item.cwd, item.sessionId, config.claudeConfigDir);
+          return metadata.exists ? metadata : { sessionId: item.sessionId, cwd: item.cwd, exists: false };
+        });
+      json(res, 200, { sessions: reconciled });
+      return;
+    }
+
+    const continuationMatch = pathname.match(/^\/sessions\/([^/]+)\/messages$/);
+    if (req.method === "POST" && continuationMatch) {
+      const sessionId = decodeURIComponent(continuationMatch[1]);
       let body;
       try {
         body = await readJson(req);
@@ -182,13 +230,20 @@ export function createBridgeServer({ config, runnerFactory = createClaudeRunner 
         json(res, 400, { error: "instruction is required." });
         return;
       }
+      let session = sessions.get(sessionId);
+      if (!session) {
+        try {
+          session = makeSession(config, { ...body, cwd: body.cwd }, sessionId, runnerFactory, { resume: true });
+          sessions.set(session.id, session);
+        } catch (error) {
+          json(res, 404, { error: "Claude Session not found or its cwd is not configured." });
+          return;
+        }
+      }
       sseHeaders(res);
-      const prompt = buildPrompt({
-        action: actionFor(config, session.actionId),
-        instruction: body.instruction,
-        sourceMessage: session.sourceMessage,
-        messageContext: session.messageContext,
-      });
+      // Claude already owns the conversation context when resuming. Sending
+      // only the follow-up instruction avoids duplicating the Source Message.
+      const prompt = body.instruction.trim();
       await runAndStream({ config, session, prompt, res });
       return;
     }
@@ -228,7 +283,7 @@ export function createBridgeServer({ config, runnerFactory = createClaudeRunner 
       }
       sessions.set(session.id, session);
       sseHeaders(res);
-      sendSse(res, "session", { sessionId: session.id });
+      sendSse(res, "session", { sessionId: session.id, claudeSessionId: session.id, cwd: session.cwd });
       const prompt = buildPrompt({
         action: actionFor(config, body.actionId),
         instruction: body.instruction,

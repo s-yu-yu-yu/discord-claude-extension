@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { extractSessionTitle, stripSessionTitle } from "./prompt.js";
 
 function textFromContent(content) {
   if (typeof content === "string") return content;
@@ -42,9 +43,10 @@ export function normalizeClaudeEvent(event) {
   return result;
 }
 
-export function argsForPrompt(prompt, resumeId) {
+export function argsForPrompt(prompt, resumeId, sessionId) {
   const args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--include-partial-messages"];
   if (resumeId) args.push("--resume", resumeId);
+  else if (sessionId) args.push("--session-id", sessionId);
   return args;
 }
 
@@ -73,22 +75,72 @@ export function createTextDeltaAccumulator() {
   };
 }
 
+export function createTitleStreamFilter(onTitle) {
+  let buffer = "";
+  let titleSeen = false;
+  const publishTitle = (text) => {
+    const extracted = extractSessionTitle(text);
+    if (!extracted) return false;
+    titleSeen = true;
+    onTitle(extracted.title);
+    return true;
+  };
+  return {
+    accept(text) {
+      if (!text) return "";
+      if (titleSeen) return text;
+      buffer += text;
+      if (publishTitle(buffer)) {
+        const visible = stripSessionTitle(buffer);
+        buffer = "";
+        return visible;
+      }
+      // The title is requested as the first line. If a non-conforming CLI
+      // exceeds this small prefix, release it rather than holding the stream.
+      if (buffer.length > 512 && !buffer.includes("[DCE_SESSION_TITLE]")) {
+        titleSeen = true;
+        const visible = buffer;
+        buffer = "";
+        return visible;
+      }
+      return "";
+    },
+    finish(finalText = "") {
+      if (titleSeen) return "";
+      if (finalText && publishTitle(finalText)) {
+        buffer = "";
+        return stripSessionTitle(finalText);
+      }
+      titleSeen = true;
+      const visible = buffer;
+      buffer = "";
+      return visible;
+    },
+  };
+}
+
 export function createClaudeRunner(config) {
   let child;
   let stopped = false;
 
   return {
-    run({ prompt, cwd, resumeId, onEvent }) {
+    run({ prompt, cwd, resumeId, sessionId, onEvent }) {
       return new Promise((resolve, reject) => {
         stopped = false;
-        child = spawn(config.claudeCommand, argsForPrompt(prompt, resumeId), {
+        child = spawn(config.claudeCommand, argsForPrompt(prompt, resumeId, sessionId), {
           cwd,
-          env: process.env,
+          env: config.claudeConfigDir
+            ? { ...process.env, CLAUDE_CONFIG_DIR: config.claudeConfigDir }
+            : process.env,
           stdio: ["ignore", "pipe", "pipe"],
         });
         let stdoutBuffer = "";
         let stderr = "";
+        let visibleText = "";
         const textAccumulator = createTextDeltaAccumulator();
+        const titleFilter = resumeId
+          ? null
+          : createTitleStreamFilter((title) => onEvent({ type: "title", title }));
 
         const processLine = (line) => {
           if (!line.trim()) return;
@@ -104,7 +156,20 @@ export function createClaudeRunner(config) {
           for (const event of normalizeClaudeEvent(parsed)) {
             if (event.type === "delta") {
               const deltaText = textAccumulator.accept(event);
-              if (deltaText) onEvent({ type: "delta", text: deltaText });
+              const filteredText = titleFilter ? titleFilter.accept(deltaText) : deltaText;
+              if (filteredText) {
+                visibleText += filteredText;
+                onEvent({ type: "delta", text: filteredText });
+              }
+            } else if (event.type === "complete") {
+              if (titleFilter) {
+                const finalText = titleFilter.finish(event.text || "");
+                if (finalText) {
+                  visibleText += finalText;
+                  onEvent({ type: "delta", text: finalText });
+                }
+                onEvent({ ...event, text: event.text ? stripSessionTitle(event.text) : event.text });
+              } else onEvent(event);
             } else onEvent(event);
           }
         };
@@ -123,9 +188,9 @@ export function createClaudeRunner(config) {
           if (stdoutBuffer) processLine(stdoutBuffer);
           child = undefined;
           if (stopped) {
-            resolve({ stopped: true, text: textAccumulator.getText() });
+            resolve({ stopped: true, text: visibleText });
           } else if (code === 0) {
-            resolve({ text: textAccumulator.getText() });
+            resolve({ text: visibleText });
           } else {
             const suffix = stderr.trim() || `Claude Code exited with code ${code ?? "unknown"}${signal ? ` (${signal})` : ""}.`;
             reject(new Error(suffix));
