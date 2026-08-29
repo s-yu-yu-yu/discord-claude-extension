@@ -46,6 +46,8 @@ node bridge/src/index.js --config bridge/config.json
 
 `claudeCommand` を設定すると、CLI の場所やテスト用のラッパーを変更できます。
 
+Message Context に含まれる Discord の添付ファイルは、ファイル名・URL・MIME type・サイズを prompt に記載します。画像、PDF、テキスト、ソースコード、JSON、CSV、ログなどの小さなファイルは Bridge が `attachmentsDir`（既定は OS の一時ディレクトリ配下の `claude-bridge-attachments`）の Claude Session ごとのサブディレクトリへダウンロードし、`--add-dir` で Claude Code から読めるようにします。`attachmentMaxBytes`（既定 20971520 = 20 MB）を超えるファイル、動画・音声、種類を判別できないファイルはダウンロードせず metadata と URL のみを渡します。ダウンロードの失敗は Side Panel に tool 行として表示され、残りの Message Context はそのまま送信されます。ダウンロード済みファイルは Bridge が起動時と1時間ごとに確認し、24時間を過ぎたものを削除します。
+
 通常は Claude Code の既存設定をそのまま使うため claudeConfigDir を設定しません。この場合、CLIは現在の CLAUDE_CONFIG_DIR 環境変数（未設定なら ~/.claude）を使用します。独自のClaude設定ルートを使う場合だけ、設定へ "claudeConfigDir": "/path/to/claude-config" を追加してください。指定値はCLIの CLAUDE_CONFIG_DIR とセッションJSONLの参照先へ同時に適用されます。
 
 ### 2. Chrome 拡張
@@ -75,7 +77,8 @@ npm run typecheck # JS-only 構成のため構文検査を実行
 
 - Issue #1 の Source Message に加えて、Issue #3 では返信時に親方向の root から Source Message の子孫までを Message Context として自動選択します。祖先の兄弟分岐は含めません。非 reply は Source Message 1件のみです。
 - 送信前に message 単位の ON/OFF を変更でき、前後5件の追加、取得不足の表示、20件以上の warning を提供します。候補はまず DOM、次に page world から見つかった Discord の現在の message cache を使います。
-- 大量に仮想化された未表示メッセージや添付ファイルの実体取得は行いません。取得できない範囲があっても Source Message を送信できます。
+- 大量に仮想化された未表示メッセージの取得は行いません。取得できない範囲があっても Source Message を送信できます。
+- Issue #4 では Message Context の添付ファイルを Bridge がダウンロードして Claude Code へ渡します。動画・音声・`attachmentMaxBytes` 超過・種類不明のファイルは metadata と URL のみで、実体は取得しません。DOM から得た添付は MIME type とサイズが空になり、page world の message cache が見つかった場合にそれらで補完します。
 - Claude Code CLI の `stream-json` 出力（`stream_event` 内の partial delta と後続の assistant 全文を含む）を delta / tool / result に正規化します。未知の JSON イベントや JSON ではない stdout の診断行は回答へ混ぜず無視します。
 - Issue #2 では Side Panel のセッション一覧、同じ Claude Session への追加指示、実行中 turn の停止、完了後の未読 badge と閲覧時の既読化を提供します。Bridge 再起動後も Claude JSONL が残っているセッションを再表示できます。
 - 手動 archive/delete、OS 通知、Bridge 認証、Discord への投稿、自動リトライは対象外です。Discord の内部 cache は現在の Webpack から最小限に探索するため、Discord の更新で利用できなくなる可能性があります。

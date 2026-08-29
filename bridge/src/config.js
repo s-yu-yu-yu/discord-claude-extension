@@ -53,6 +53,8 @@ export function normalizeConfig(input = {}) {
           .map((root) => ({ path: expandHome(root.path), depth: Number.isInteger(root.depth) ? root.depth : undefined }))
       : [],
     projectDepth: Number.isInteger(input.projectDepth) && input.projectDepth >= 0 ? input.projectDepth : 2,
+    attachmentsDir: expandHome(input.attachmentsDir) || path.join(os.tmpdir(), "claude-bridge-attachments"),
+    attachmentMaxBytes: Number.isInteger(input.attachmentMaxBytes) && input.attachmentMaxBytes > 0 ? input.attachmentMaxBytes : 20 * 1024 * 1024,
     actions,
   };
 }

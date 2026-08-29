@@ -77,7 +77,7 @@ test("page-world cache bridge discovers exported message stores and normalizes D
       timestamp: "2026-08-30T01:02:03Z",
       channel: { id: "legacy-channel", name: "" },
       sourceLink: "https://discord.com/channels/guild/legacy-channel/legacy",
-      attachments: [{ name: "file.txt", mimeType: "text/plain", url: "https://cdn.discordapp.com/file" }],
+      attachments: [{ id: "", name: "file.txt", mimeType: "text/plain", url: "https://cdn.discordapp.com/file" }],
       replyTo: "legacy-parent",
     },
     {

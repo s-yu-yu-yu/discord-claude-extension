@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import http from "node:http";
 import { chmod, mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -57,6 +58,7 @@ test("normalizes Claude partial stream events and avoids assistant full-text dup
   assert.ok(argsForPrompt("prompt").includes("--include-partial-messages"));
   assert.deepEqual(argsForPrompt("follow-up", "123e4567-e89b-12d3-a456-426614174000").slice(-2), ["--resume", "123e4567-e89b-12d3-a456-426614174000"]);
   assert.deepEqual(argsForPrompt("first", undefined, "123e4567-e89b-12d3-a456-426614174000").slice(-2), ["--session-id", "123e4567-e89b-12d3-a456-426614174000"]);
+  assert.deepEqual(argsForPrompt("first", undefined, undefined, ["/tmp/att"]).slice(-2), ["--add-dir", "/tmp/att"]);
 });
 
 test("extracts a Claude-generated title marker and does not filter resume output", () => {
@@ -354,6 +356,54 @@ test("Bridge reconciliation reports existing Claude JSONL sessions only", async 
   assert.equal(response.status, 200);
   assert.equal(body.sessions.find((item) => item.sessionId === existingId).exists, true);
   assert.equal(body.sessions.find((item) => item.sessionId === missingId).exists, false);
+});
+
+test("Bridge downloads Message Context attachments and exposes them to Claude", async (t) => {
+  const files = http.createServer((req, res) => {
+    if (req.url === "/a/log.txt") res.end("error at line 3");
+    else { res.statusCode = 404; res.end(); }
+  });
+  await new Promise((resolve) => files.listen(0, "127.0.0.1", resolve));
+  t.after(() => files.close());
+  const fileBase = `http://127.0.0.1:${files.address().port}`;
+  const attachmentsDir = await mkdtemp(path.join(os.tmpdir(), "discord-claude-attachments-"));
+  let received;
+  const runnerFactory = () => ({
+    async run({ prompt, addDirs, onEvent }) {
+      received = { prompt, addDirs };
+      onEvent({ type: "complete", text: "done" });
+      return { text: "done" };
+    },
+    stop() { return true; },
+  });
+  const { server, base } = await startTestServer(runnerFactory, { attachmentsDir });
+  t.after(() => server.close());
+  const source = { id: "S", text: "see the log", sourceLink: "https://discord.com/channels/1/2/S" };
+  const response = await fetch(`${base}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      instruction: "確認",
+      sourceMessage: source,
+      messageContext: [{
+        ...source,
+        attachments: [
+          { id: "10", name: "log.txt", mimeType: "text/plain", url: `${fileBase}/a/log.txt` },
+          { id: "11", name: "gone.txt", mimeType: "text/plain", url: `${fileBase}/a/gone.txt` },
+        ],
+      }],
+    }),
+  });
+  const body = await response.text();
+  assert.equal(response.status, 200);
+  const sessionId = [...server.sessions.keys()][0];
+  const localPath = path.join(attachmentsDir, sessionId, "10-log.txt");
+  assert.match(received.prompt, new RegExp(`Local file: ${localPath.replace(/[.\\/]/g, "\\$&")}`));
+  assert.match(received.prompt, /取得失敗: HTTP 404/);
+  assert.deepEqual(received.addDirs, [path.join(attachmentsDir, sessionId)]);
+  assert.match(body, /添付ファイル取得: log\.txt/);
+  assert.match(body, /添付ファイル取得失敗: gone\.txt/);
+  assert.match(body, /event: done/);
 });
 
 test("Bridge rejects a request without a Source Link", async (t) => {

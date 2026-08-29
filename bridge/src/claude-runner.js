@@ -43,10 +43,11 @@ export function normalizeClaudeEvent(event) {
   return result;
 }
 
-export function argsForPrompt(prompt, resumeId, sessionId) {
+export function argsForPrompt(prompt, resumeId, sessionId, addDirs = []) {
   const args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--include-partial-messages"];
   if (resumeId) args.push("--resume", resumeId);
   else if (sessionId) args.push("--session-id", sessionId);
+  for (const dir of addDirs) args.push("--add-dir", dir);
   return args;
 }
 
@@ -124,10 +125,10 @@ export function createClaudeRunner(config) {
   let stopped = false;
 
   return {
-    run({ prompt, cwd, resumeId, sessionId, onEvent }) {
+    run({ prompt, cwd, resumeId, sessionId, addDirs = [], onEvent }) {
       return new Promise((resolve, reject) => {
         stopped = false;
-        child = spawn(config.claudeCommand, argsForPrompt(prompt, resumeId, sessionId), {
+        child = spawn(config.claudeCommand, argsForPrompt(prompt, resumeId, sessionId, addDirs), {
           cwd,
           env: config.claudeConfigDir
             ? { ...process.env, CLAUDE_CONFIG_DIR: config.claudeConfigDir }

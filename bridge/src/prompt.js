@@ -19,7 +19,14 @@ export function stripSessionTitle(text) {
 function formatAttachment(attachment) {
   const fields = [attachment.name, attachment.mimeType, attachment.size ? `${attachment.size} bytes` : null, attachment.url]
     .filter(Boolean);
+  if (attachment.localPath) fields.push(`Local file: ${attachment.localPath}`);
+  else if (attachment.skipped) fields.push("取得しない（動画・音声など大容量メディア）");
+  else if (attachment.error) fields.push(`取得失敗: ${attachment.error}`);
   return fields.join(" | ");
+}
+
+function hasLocalFile(messages) {
+  return messages.some((message) => message?.attachments?.some((attachment) => attachment.localPath));
 }
 
 export function formatMessage(message, index) {
@@ -50,6 +57,9 @@ export function buildPrompt({ action, instruction = "", sourceMessage, messageCo
   return [
     `あなたは Claude Code です。以下の Discord ${contextLabel} を作業コンテキストとして扱ってください。`,
     "各メッセージの Source Link は原文へ戻るためのリンクです。必要に応じて回答や作成物へ記載してください。",
+    ...(hasLocalFile([source, ...context])
+      ? ["添付ファイルのうち Local file が示されているものは Bridge がダウンロード済みです。Read ツールでそのパスを読んで内容を確認してください。"]
+      : []),
     `最初に、あなたがこの作業に付ける短いタイトルを ${SESSION_TITLE_START}タイトル${SESSION_TITLE_END} の形式で1行だけ出力してください。タイトルは80文字以内にし、その後に通常の回答を続けてください。マーカー自体は通常の回答へ繰り返しません。`,
     "",
     "## Action Preset",

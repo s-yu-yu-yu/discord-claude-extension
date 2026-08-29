@@ -1,10 +1,11 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { isConfiguredCwd, listProjects, readClaudeSessionMetadata } from "./config.js";
 import { createClaudeRunner } from "./claude-runner.js";
 import { buildPrompt, validateSessionRequest } from "./prompt.js";
+import { prepareAttachments } from "./attachments.js";
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -70,6 +71,27 @@ function resolveStoredCwd(config, cwd) {
   return cwd;
 }
 
+function sameMessage(left, right) {
+  return left === right || (left?.id && left.id === right?.id) || (left?.sourceLink && left.sourceLink === right?.sourceLink);
+}
+
+// Downloads supported attachments of the Message Context into the session's
+// directory and reports each result as a tool event before Claude starts.
+export async function attachSessionFiles({ config, session, res }) {
+  const sourceIncluded = session.messageContext.some((message) => sameMessage(message, session.sourceMessage));
+  const messages = sourceIncluded ? session.messageContext : [session.sourceMessage, ...session.messageContext];
+  const prepared = await prepareAttachments({
+    messages,
+    directory: path.join(config.attachmentsDir, session.id),
+    maxBytes: config.attachmentMaxBytes,
+  });
+  for (const failure of prepared.failures) sendSse(res, "tool", { name: `添付ファイル取得失敗: ${failure.name}`, detail: failure.error });
+  for (const file of prepared.downloaded) sendSse(res, "tool", { name: `添付ファイル取得: ${file.name}`, detail: file.localPath });
+  session.sourceMessage = prepared.messages.find((message) => sameMessage(message, session.sourceMessage)) || session.sourceMessage;
+  session.messageContext = sourceIncluded ? prepared.messages : prepared.messages.slice(1);
+  if (prepared.downloaded.length > 0) session.attachmentsDir = prepared.directory;
+}
+
 function actionFor(config, actionId) {
   if (!actionId) return undefined;
   return config.actions.find((action) => action.id === actionId);
@@ -96,6 +118,8 @@ function makeSession(config, body, bridgeId, runnerFactory, { resume = false } =
     title: body.title || body.instruction?.trim().slice(0, 48) || "Discord Source Message",
     wasResumed: resume,
     runner: runnerFactory(config),
+    // Attachments downloaded by an earlier Bridge process stay readable after a restart.
+    attachmentsDir: existsSync(path.join(config.attachmentsDir, bridgeId)) ? path.join(config.attachmentsDir, bridgeId) : undefined,
     status: "running",
     text: "",
   };
@@ -145,6 +169,7 @@ async function runAndStream({ config, session, prompt, res, closeWhenDone = true
       cwd: session.cwd,
       resumeId: session.claudeSessionId,
       sessionId: session.claudeSessionId ? undefined : session.id,
+      addDirs: session.attachmentsDir ? [session.attachmentsDir] : [],
       onEvent: emit,
     });
     session.status = result.stopped ? "stopped" : "complete";
@@ -284,10 +309,11 @@ export function createBridgeServer({ config, runnerFactory = createClaudeRunner 
       sessions.set(session.id, session);
       sseHeaders(res);
       sendSse(res, "session", { sessionId: session.id, claudeSessionId: session.id, cwd: session.cwd });
+      await attachSessionFiles({ config, session, res });
       const prompt = buildPrompt({
         action: actionFor(config, body.actionId),
         instruction: body.instruction,
-        sourceMessage: body.sourceMessage,
+        sourceMessage: session.sourceMessage,
         messageContext: session.messageContext,
       });
       await runAndStream({ config, session, prompt, res });

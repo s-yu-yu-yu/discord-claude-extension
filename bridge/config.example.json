@@ -5,6 +5,7 @@
   "claudeCommand": "claude",
   "projectRoots": [],
   "projectDepth": 2,
+  "attachmentMaxBytes": 20971520,
   "actions": [
     {
       "id": "research",

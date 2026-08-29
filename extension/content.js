@@ -43,14 +43,31 @@
     return location.href;
   }
 
+  const ATTACHMENT_HOSTS = ["cdn.discordapp.com", "media.discordapp.net"];
+  const ATTACHMENT_SELECTOR = ATTACHMENT_HOSTS.flatMap((host) => [
+    `a[href*="${host}/attachments/"]`,
+    `img[src*="${host}/attachments/"]`,
+    `video[src*="${host}/attachments/"]`,
+    `video source[src*="${host}/attachments/"]`,
+    `audio[src*="${host}/attachments/"]`,
+  ]).join(", ");
+
+  function extractAttachments(root) {
+    const byId = new Map();
+    for (const node of root.querySelectorAll(ATTACHMENT_SELECTOR)) {
+      const url = node.href || node.src || "";
+      const match = url.match(/\/attachments\/\d+\/(\d+)\/([^/?#]+)/);
+      if (!match || byId.has(match[1])) continue;
+      byId.set(match[1], { id: match[1], name: decodeURIComponent(match[2]), url, mimeType: "", size: undefined });
+    }
+    return [...byId.values()];
+  }
+
   function extractMessage(root) {
     const id = messageIdFromRoot(root);
     const content = root.querySelector('[id^="message-content-"], [class*="messageContent"]');
     const author = root.querySelector('[id^="message-username-"], [class*="username"]');
     const time = root.querySelector("time[datetime]");
-    const links = [...root.querySelectorAll("a[href]")]
-      .map((anchor) => ({ url: anchor.href, name: anchor.textContent?.trim() || anchor.getAttribute("aria-label") || "" }))
-      .filter((attachment) => /download|cdn\.discordapp|media\.discordapp/i.test(attachment.url));
     return {
       id,
       text: content?.textContent?.trim() || root.innerText?.trim() || "",
@@ -58,7 +75,7 @@
       timestamp: time?.getAttribute("datetime") || time?.textContent?.trim() || "",
       channel: currentChannel(),
       sourceLink: permalinkFor(id),
-      attachments: links,
+      attachments: extractAttachments(root),
       replyTo: replyParentId(root),
     };
   }
@@ -204,7 +221,8 @@
         });
         const details = element("span", "dce-context-details");
         details.append(
-          element("span", "dce-context-meta", message.author + " · " + message.timestamp + " · " + (message.channel?.name || "")),
+          element("span", "dce-context-meta", message.author + " · " + message.timestamp + " · " + (message.channel?.name || "") +
+            (message.attachments?.length ? " · 📎" + message.attachments.length : "")),
           element("span", "dce-context-message", message.text || "（本文なし）"),
         );
         row.append(checkbox, details);

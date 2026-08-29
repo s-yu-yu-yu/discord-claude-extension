@@ -64,6 +64,7 @@
       sourceLink: permalink(id, locationInfo.guildId || request.guildId, channelId),
       attachments: Array.isArray(raw.attachments)
         ? raw.attachments.map((attachment) => ({
+            id: String(attachment.id || ""),
             name: attachment.filename || attachment.name || "",
             mimeType: attachment.content_type || attachment.mimeType || "",
             size: attachment.size,

@@ -48,7 +48,10 @@ function mergeMessages(primary, fallback = []) {
     const existing = merged.get(id);
     // DOM data wins, while cache-only fields such as message_reference fill
     // in details that Discord did not render for the current virtualized row.
-    merged.set(id, { ...existing, ...message, replyTo: message.replyTo || existing?.replyTo });
+    // Cache attachments carry mimeType/size that the DOM cannot provide.
+    const combined = { ...existing, ...message, replyTo: message.replyTo || existing?.replyTo };
+    if (existing?.attachments?.length) combined.attachments = existing.attachments;
+    merged.set(id, combined);
   }
   return sortMessages([...merged.values()]);
 }
