@@ -12,6 +12,8 @@ Discord Web (content script)
   -> Chrome Side Panel
 ```
 
+かんたんな使い方は [docs/usage.md](docs/usage.md) を参照してください。
+
 ## セットアップ
 
 ### 1. Bridge
