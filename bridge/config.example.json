@@ -3,6 +3,8 @@
   "port": 3456,
   "workspace": "~/claude-discord-workspace",
   "claudeCommand": "claude",
+  "claudeModel": "opus",
+  "claudeEffort": "high",
   "projectRoots": [],
   "projectDepth": 2,
   "attachmentMaxBytes": 20971520,

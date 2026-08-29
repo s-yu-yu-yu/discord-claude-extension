@@ -67,6 +67,9 @@ export function normalizeConfig(input = {}) {
     workspace: expandHome(input.workspace) || path.join(os.homedir(), "claude-discord-workspace"),
     claudeConfigDir,
     claudeCommand: typeof input.claudeCommand === "string" && input.claudeCommand ? input.claudeCommand : "claude",
+    // "" disables the flag so the CLI falls back to the user's Claude Code default.
+    claudeModel: typeof input.claudeModel === "string" ? input.claudeModel : "opus",
+    claudeEffort: typeof input.claudeEffort === "string" ? input.claudeEffort : "high",
     terminalCommand: typeof input.terminalCommand === "string" ? input.terminalCommand : DEFAULT_TERMINAL_COMMAND,
     projectRoots: Array.isArray(input.projectRoots)
       ? input.projectRoots

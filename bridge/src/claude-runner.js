@@ -131,7 +131,10 @@ export function createClaudeRunner(config) {
     run({ prompt, cwd, resumeId, sessionId, addDirs = [], fork = false, onEvent }) {
       return new Promise((resolve, reject) => {
         stopped = false;
-        child = spawn(config.claudeCommand, argsForPrompt(prompt, resumeId, sessionId, addDirs, { fork }), {
+        const args = argsForPrompt(prompt, resumeId, sessionId, addDirs, { fork });
+        if (config.claudeModel) args.push("--model", config.claudeModel);
+        if (config.claudeEffort) args.push("--effort", config.claudeEffort);
+        child = spawn(config.claudeCommand, args, {
           cwd,
           env: config.claudeConfigDir
             ? { ...process.env, CLAUDE_CONFIG_DIR: config.claudeConfigDir }

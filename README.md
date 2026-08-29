@@ -51,7 +51,19 @@ node bridge/src/index.js --config bridge/config.json
 
 `actions` を省略すると Bridge 既定の Action Preset（`jira` Jiraに起票、`github-issue` GitHub Issue化、`summarize` 要約、`research` 調査、`critique` 批評、`freeform` 自由入力）を使います。「自由入力」も Bridge から配信される preset で、拡張側に固定の preset はありません。`bridge/config.example.json` に同じ一覧があります。
 
-`claudeCommand` を設定すると、CLI の場所やテスト用のラッパーを変更できます。
+`claudeCommand` を設定すると、CLI の場所やテスト用のラッパーを変更できます。`claudeModel`（既定 `opus`）と `claudeEffort`（既定 `high`）は CLI の `--model` / `--effort` にそのまま渡ります。`""` を設定すると該当フラグを付けず、Claude Code 側の既定設定に従います。
+
+### Bridge をバックグラウンドで常駐させる（macOS）
+
+Chrome 拡張は Node を起動できないため、Bridge は macOS の launchd（LaunchAgent）でログイン時に自動起動させます。
+
+```sh
+npm run bridge:install    # ~/Library/LaunchAgents に登録して即起動（config.json が無ければ example から作成）
+npm run bridge:status     # 状態確認
+npm run bridge:uninstall  # 登録解除
+```
+
+ログは `~/Library/Logs/claude-bridge.log` に出ます。`bridge/config.json` を変更したら `npm run bridge:install` を再実行すると再起動します。Bridge は落ちても launchd が再起動します。
 
 `terminalCommand` は Side Panel の「ターミナルで開く」が実行するシェルコマンドで、`{command}` プレースホルダーが `cd "<cwd>" && claude --resume <session-id>` に置き換わります。macOS の既定値は `osascript -e 'tell application "Terminal" to do script "{command}"' -e 'tell application "Terminal" to activate'`（Terminal.app を起動）で、他の OS では空文字列のため起動は無効です。`""` を設定すると macOS でも起動を無効にでき、その場合はコマンドのコピーのみ利用できます。
 

@@ -14,7 +14,7 @@
 }
 .dce-claude-button:hover { background: var(--interactive-background-hover, rgb(255 255 255 / 8%)); color: var(--interactive-text-hover, #fff); }
 .dce-claude-button:active { color: #d97757; }
-.dce-claude-button svg { height: 20px; width: 20px; }
+.dce-claude-button svg { height: 16px; width: 16px; }
 .dce-message-root > .dce-claude-button { display: none; position: absolute; right: 8px; top: 4px; z-index: 2; }
 .dce-message-root:hover > .dce-claude-button { display: flex; }
 .dce-composer {

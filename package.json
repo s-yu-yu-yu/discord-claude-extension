@@ -8,7 +8,10 @@
     "build": "node scripts/build.mjs",
     "lint": "node scripts/check.mjs",
     "typecheck": "node scripts/check.mjs --typecheck",
-    "test": "node --test bridge/test/*.test.js"
+    "test": "node --test bridge/test/*.test.js",
+    "bridge:install": "node scripts/service.mjs install",
+    "bridge:uninstall": "node scripts/service.mjs uninstall",
+    "bridge:status": "node scripts/service.mjs status"
   },
   "engines": {
     "node": ">=20"
