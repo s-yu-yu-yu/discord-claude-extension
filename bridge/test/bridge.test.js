@@ -6,13 +6,13 @@ import path from "node:path";
 import test from "node:test";
 import { claudeProjectDirectory, normalizeConfig, listProjects, readClaudeSessionMetadata } from "../src/config.js";
 import { buildPrompt } from "../src/prompt.js";
-import { createBridgeServer } from "../src/server.js";
+import { createBridgeServer, isLoopback } from "../src/server.js";
 import { argsForPrompt, createClaudeRunner, createTextDeltaAccumulator, createTitleStreamFilter, normalizeClaudeEvent } from "../src/claude-runner.js";
 
-async function startTestServer(runnerFactory, overrides = {}) {
+async function startTestServer(runnerFactory, overrides = {}, serverOptions = {}) {
   const workspace = await mkdtemp(path.join(os.tmpdir(), "discord-claude-"));
   const config = normalizeConfig({ workspace, actions: [{ id: "research", label: "調査", prompt: "調査する" }], ...overrides });
-  const server = createBridgeServer({ config, runnerFactory });
+  const server = createBridgeServer({ config, runnerFactory, ...serverOptions });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   return { server, base: `http://127.0.0.1:${address.port}`, config };
@@ -486,6 +486,36 @@ test("Bridge reconciliation reports existing Claude JSONL sessions only", async 
   assert.equal(response.status, 200);
   assert.equal(body.sessions.find((item) => item.sessionId === existingId).exists, true);
   assert.equal(body.sessions.find((item) => item.sessionId === missingId).exists, false);
+});
+
+test("Bridge hands a resumable Claude Session off to a local terminal", async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "discord-claude-terminal-"));
+  const sessionId = "123e4567-e89b-12d3-a456-426614174002";
+  const launched = [];
+  const { server, base, config } = await startTestServer(
+    () => ({ run: async () => ({}), stop() {} }),
+    { claudeConfigDir: dataDir, terminalCommand: "echo {command}" },
+    { launchTerminal: (commandLine) => launched.push(commandLine) },
+  );
+  t.after(() => server.close());
+  const directory = claudeProjectDirectory(config.workspace, dataDir);
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, `${sessionId}.jsonl`), JSON.stringify({ type: "user", message: { content: "再開するセッション" } }) + "\n");
+  const query = `?cwd=${encodeURIComponent(config.workspace)}`;
+  const info = await (await fetch(`${base}/sessions/${sessionId}/terminal${query}`)).json();
+  assert.deepEqual(info, { command: `cd "${config.workspace}" && claude --resume ${sessionId}`, local: true, canOpenTerminal: true });
+  const opened = await fetch(`${base}/sessions/${sessionId}/terminal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cwd: config.workspace }),
+  });
+  assert.equal(opened.status, 200);
+  assert.equal((await opened.json()).ok, true);
+  assert.equal(launched.length, 1);
+  assert.match(launched[0], new RegExp(`claude --resume ${sessionId}`));
+  const missing = await fetch(`${base}/sessions/123e4567-e89b-12d3-a456-426614174003/terminal${query}`);
+  assert.equal(missing.status, 404);
+  assert.equal(isLoopback({ socket: { remoteAddress: "192.168.1.5" } }), false);
 });
 
 test("Bridge downloads Message Context attachments and exposes them to Claude", async (t) => {

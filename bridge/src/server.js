@@ -1,4 +1,5 @@
 import http from "node:http";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
@@ -69,6 +70,22 @@ function resolveStoredCwd(config, cwd) {
     throw new Error("The stored cwd is not configured in the Bridge.");
   }
   return cwd;
+}
+
+// Claude Code stores sessions per project directory, so the terminal must cd
+// into the session's cwd before `claude --resume` can find it.
+// ponytail: double quotes so the default osascript template (single-quoted
+// for /bin/sh) still delivers paths with spaces; a cwd containing ' breaks launch only.
+function resumeCommand(cwd, sessionId) {
+  return `cd "${cwd.replace(/(["\\$`])/g, "\\$1")}" && claude --resume ${sessionId}`;
+}
+
+export function isLoopback(req) {
+  return ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket?.remoteAddress);
+}
+
+function defaultLaunchTerminal(commandLine) {
+  spawn("/bin/sh", ["-c", commandLine], { detached: true, stdio: "ignore" }).unref();
 }
 
 function sameMessage(left, right) {
@@ -197,7 +214,7 @@ async function runAndStream({ config, session, prompt, res, closeWhenDone = true
   }
 }
 
-export function createBridgeServer({ config, runnerFactory = createClaudeRunner } = {}) {
+export function createBridgeServer({ config, runnerFactory = createClaudeRunner, launchTerminal = defaultLaunchTerminal } = {}) {
   if (!config) throw new Error("config is required");
   const sessions = new Map();
 
@@ -293,6 +310,42 @@ export function createBridgeServer({ config, runnerFactory = createClaudeRunner 
       // only the follow-up instruction avoids duplicating the Source Message.
       const prompt = body.instruction.trim();
       await runAndStream({ config, session, prompt, res });
+      return;
+    }
+
+    const terminalMatch = pathname.match(/^\/sessions\/([^/]+)\/terminal$/);
+    if ((req.method === "GET" || req.method === "POST") && terminalMatch) {
+      const sessionId = decodeURIComponent(terminalMatch[1]);
+      let cwd;
+      try {
+        cwd = resolveStoredCwd(config, req.method === "GET" ? requestUrl.searchParams.get("cwd") : (await readJson(req)).cwd);
+      } catch (error) {
+        json(res, 400, { error: error.message });
+        return;
+      }
+      // readClaudeSessionMetadata also rejects malformed session IDs, which
+      // keeps shell metacharacters out of the resume command.
+      if (!readClaudeSessionMetadata(cwd, sessionId, config.claudeConfigDir).exists) {
+        json(res, 404, { error: "Claude Session not found." });
+        return;
+      }
+      const command = resumeCommand(cwd, sessionId);
+      const local = isLoopback(req);
+      if (req.method === "GET") {
+        json(res, 200, { command, local, canOpenTerminal: local && Boolean(config.terminalCommand) });
+        return;
+      }
+      if (!local) {
+        json(res, 403, { error: "Bridge が別のマシンで動作しています。コマンドをコピーして実行してください。", command });
+        return;
+      }
+      if (!config.terminalCommand) {
+        json(res, 501, { error: "この Bridge ではターミナルを起動できません。コマンドをコピーして実行してください。", command });
+        return;
+      }
+      // {command} lands inside an AppleScript string literal in the default template.
+      launchTerminal(config.terminalCommand.replace("{command}", command.replace(/\\/g, "\\\\").replace(/"/g, '\\"')));
+      json(res, 200, { ok: true, command });
       return;
     }
 

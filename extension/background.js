@@ -524,6 +524,32 @@ chrome.runtime.onConnect.addListener((port) => {
       } catch {
         port.postMessage({ type: "command-error", error: "実行を停止できませんでした。" });
       }
+    } else if (message.type === "terminal-info") {
+      const state = await stateForId(message.sessionId);
+      if (!state?.cwd) { port.postMessage({ type: "terminal-info", sessionId: message.sessionId, error: "Claude Sessionが見つかりません。" }); return; }
+      try {
+        const response = await bridgeFetch(`/sessions/${encodeURIComponent(state.claudeSessionId || state.sessionId)}/terminal?cwd=${encodeURIComponent(state.cwd)}`);
+        const body = await response.json();
+        port.postMessage({ type: "terminal-info", sessionId: state.sessionId, ...(response.ok ? body : { error: body.error }) });
+      } catch {
+        port.postMessage({ type: "terminal-info", sessionId: state.sessionId, error: "Claude Bridgeに接続できません。" });
+      }
+    } else if (message.type === "open-terminal") {
+      const state = await stateForId(message.sessionId);
+      if (!state?.cwd) { port.postMessage({ type: "command-error", error: "Claude Sessionが見つかりません。" }); return; }
+      try {
+        const response = await bridgeFetch(`/sessions/${encodeURIComponent(state.claudeSessionId || state.sessionId)}/terminal`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cwd: state.cwd }),
+        });
+        const body = await response.json();
+        if (response.ok) port.postMessage({ type: "terminal-opened", sessionId: state.sessionId, command: body.command });
+        // The copyable command travels with the error so the panel can fall back to copying.
+        else port.postMessage({ type: "command-error", sessionId: state.sessionId, error: body.error, command: body.command });
+      } catch {
+        port.postMessage({ type: "command-error", error: "ターミナルを開けませんでした。" });
+      }
     }
   });
 });

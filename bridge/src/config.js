@@ -36,6 +36,11 @@ export const DEFAULT_ACTIONS = [
   },
 ];
 
+// Opens macOS Terminal.app with the resume command substituted for {command}.
+const DEFAULT_TERMINAL_COMMAND = process.platform === "darwin"
+  ? `osascript -e 'tell application "Terminal" to do script "{command}"' -e 'tell application "Terminal" to activate'`
+  : "";
+
 function expandHome(value) {
   if (typeof value !== "string") return value;
   return value.startsWith("~/") ? path.join(os.homedir(), value.slice(2)) : value;
@@ -62,6 +67,7 @@ export function normalizeConfig(input = {}) {
     workspace: expandHome(input.workspace) || path.join(os.homedir(), "claude-discord-workspace"),
     claudeConfigDir,
     claudeCommand: typeof input.claudeCommand === "string" && input.claudeCommand ? input.claudeCommand : "claude",
+    terminalCommand: typeof input.terminalCommand === "string" ? input.terminalCommand : DEFAULT_TERMINAL_COMMAND,
     projectRoots: Array.isArray(input.projectRoots)
       ? input.projectRoots
           .filter((root) => root && typeof root.path === "string")

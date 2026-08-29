@@ -1,6 +1,8 @@
 const port = chrome.runtime.connect({ name: "claude-sidepanel" });
 let currentState = null;
 let sessions = [];
+// Terminal handoff info per Claude Session: { status, command, canOpenTerminal }.
+const terminalInfo = new Map();
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -85,6 +87,24 @@ function renderSessions() {
   }
 }
 
+function renderTerminal(state) {
+  const info = terminalInfo.get(state.sessionId);
+  // Fetch once per session, and again when a turn finishes so a session whose
+  // JSONL did not exist yet is picked up. Streaming deltas must not refetch.
+  if (state.claudeSessionId && state.cwd && !state.sessionId.startsWith("pending-") &&
+      (!info || (info.status !== state.status && state.status !== "running"))) {
+    terminalInfo.set(state.sessionId, { ...info, status: state.status });
+    port.postMessage({ type: "terminal-info", sessionId: state.sessionId });
+  }
+  const command = terminalInfo.get(state.sessionId)?.command || "";
+  $("#resume-command").hidden = !command;
+  $("#resume-command").textContent = command;
+  $("#terminal").hidden = !terminalInfo.get(state.sessionId)?.canOpenTerminal;
+  // A concurrent CLI on the same Claude Session would conflict with the running turn.
+  $("#terminal").disabled = state.status === "running";
+  $("#copy-command").disabled = !command;
+}
+
 function renderState(state) {
   currentState = state;
   $("#empty").hidden = Boolean(state);
@@ -116,6 +136,7 @@ function renderState(state) {
   $("#refresh-context").disabled = state.status === "running" || !state.sourceMessage?.sourceLink;
   $("#instruction").disabled = state.status === "running";
   $("#continue-form button").disabled = state.status === "running";
+  renderTerminal(state);
   renderSessions();
 }
 
@@ -135,8 +156,18 @@ port.onMessage.addListener((message) => {
     }
     const initialSessionEvent = message.event === "session" && currentState?.sessionId?.startsWith("pending-");
     if (!currentState || currentState.sessionId === message.sessionId || initialSessionEvent) renderState(message.state);
+  } else if (message.type === "terminal-info") {
+    terminalInfo.set(message.sessionId, { ...terminalInfo.get(message.sessionId), command: message.command, canOpenTerminal: message.canOpenTerminal });
+    if (currentState?.sessionId === message.sessionId) renderTerminal(currentState);
+  } else if (message.type === "terminal-opened") {
+    $("#terminal").textContent = "開きました";
+    setTimeout(() => { $("#terminal").textContent = "ターミナルで開く"; }, 1500);
   } else if (message.type === "command-error") {
     $("#status").textContent = message.error;
+    if (message.command && message.sessionId) {
+      terminalInfo.set(message.sessionId, { ...terminalInfo.get(message.sessionId), command: message.command, canOpenTerminal: false });
+      if (currentState?.sessionId === message.sessionId) renderTerminal(currentState);
+    }
   }
 });
 
@@ -155,6 +186,16 @@ $("#copy").addEventListener("click", async () => {
 });
 $("#stop").addEventListener("click", () => {
   if (currentState?.status === "running") port.postMessage({ type: "stop-session", sessionId: currentState.sessionId });
+});
+$("#terminal").addEventListener("click", () => {
+  if (currentState && currentState.status !== "running") port.postMessage({ type: "open-terminal", sessionId: currentState.sessionId });
+});
+$("#copy-command").addEventListener("click", async () => {
+  const command = terminalInfo.get(currentState?.sessionId)?.command;
+  if (!command) return;
+  await navigator.clipboard.writeText(command);
+  $("#copy-command").textContent = "コピーしました";
+  setTimeout(() => { $("#copy-command").textContent = "resumeコマンドをコピー"; }, 1500);
 });
 $("#refresh-context").addEventListener("click", () => {
   if (currentState && currentState.status !== "running") port.postMessage({ type: "refresh-context", sessionId: currentState.sessionId });
