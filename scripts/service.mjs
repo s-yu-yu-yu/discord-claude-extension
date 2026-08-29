@@ -47,8 +47,14 @@ if (command === "install") {
   mkdirSync(path.dirname(plistPath), { recursive: true });
   launchctl("bootout", `${domain}/${label}`); // restart if already registered
   writeFileSync(plistPath, plist());
-  const result = launchctl("bootstrap", domain, plistPath);
-  if (result.status !== 0) { console.error(result.stderr.trim()); process.exit(result.status ?? 1); }
+  // bootout finishes asynchronously; a bootstrap issued right after it can fail.
+  let result;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    result = launchctl("bootstrap", domain, plistPath);
+    if (result.status === 0) break;
+    spawnSync("sleep", ["0.5"]);
+  }
+  if (result.status !== 0) { console.error(result.stderr.trim() || `launchctl bootstrap exited with ${result.status}`); process.exit(result.status ?? 1); }
   console.log(`Registered ${label} (log: ${logPath})`);
 } else if (command === "uninstall") {
   launchctl("bootout", `${domain}/${label}`);
