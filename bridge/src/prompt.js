@@ -40,6 +40,11 @@ export function buildPrompt({ action, instruction = "", sourceMessage, messageCo
   const context = messageContext.length > 0 ? messageContext : [sourceMessage];
   const source = sourceMessage || context[0];
   const contextLabel = context.length > 1 ? "Source Message と Message Context" : "Source Message";
+  const additionalContext = context.filter((message) => {
+    if (!source || !message) return true;
+    return message === source || (message.id && source.id && message.id === source.id) ||
+      (message.sourceLink && source.sourceLink && message.sourceLink === source.sourceLink) ? false : true;
+  });
   const actionPrompt = action?.prompt?.trim() || "DiscordのSource Messageについて、依頼内容に対応してください。";
   const instructionText = instruction.trim() || "（追加指示なし）";
   return [
@@ -56,7 +61,7 @@ export function buildPrompt({ action, instruction = "", sourceMessage, messageCo
     "## Source Message",
     formatMessage(source, 0),
     "",
-    ...(context.length > 1 ? ["", "## Message Context", ...context.map((message, index) => formatMessage(message, index))] : []),
+    ...(context.length > 1 ? ["", "## Message Context", ...additionalContext.map((message, index) => formatMessage(message, index))] : []),
   ].join("\n");
 }
 

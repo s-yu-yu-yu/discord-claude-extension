@@ -73,8 +73,9 @@ npm run typecheck # JS-only 構成のため構文検査を実行
 
 ## v1 の境界
 
-- Issue #1 では Discord Web の現在ロード済み DOM から Source Message 1件のみを取得します。Reply Chain と Message Context の調整は後続 Issue #3 の対象です。
-- 大量に仮想化された未表示メッセージや添付ファイルの実体取得は行いません。
+- Issue #1 の Source Message に加えて、Issue #3 では返信時に親方向の root から Source Message の子孫までを Message Context として自動選択します。祖先の兄弟分岐は含めません。非 reply は Source Message 1件のみです。
+- 送信前に message 単位の ON/OFF を変更でき、前後5件の追加、取得不足の表示、20件以上の warning を提供します。候補はまず DOM、次に page world から見つかった Discord の現在の message cache を使います。
+- 大量に仮想化された未表示メッセージや添付ファイルの実体取得は行いません。取得できない範囲があっても Source Message を送信できます。
 - Claude Code CLI の `stream-json` 出力（`stream_event` 内の partial delta と後続の assistant 全文を含む）を delta / tool / result に正規化します。未知の JSON イベントや JSON ではない stdout の診断行は回答へ混ぜず無視します。
 - Issue #2 では Side Panel のセッション一覧、同じ Claude Session への追加指示、実行中 turn の停止、完了後の未読 badge と閲覧時の既読化を提供します。Bridge 再起動後も Claude JSONL が残っているセッションを再表示できます。
-- Reply Chain と Message Context の調整は後続 Issue #3 の対象です。手動 archive/delete、OS 通知、Bridge 認証、Discord への投稿、自動リトライは対象外です。
+- 手動 archive/delete、OS 通知、Bridge 認証、Discord への投稿、自動リトライは対象外です。Discord の内部 cache は現在の Webpack から最小限に探索するため、Discord の更新で利用できなくなる可能性があります。

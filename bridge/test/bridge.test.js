@@ -213,6 +213,46 @@ test("Bridge streams session, delta, tool and completion events over SSE", async
   assert.match(body, /event: done/);
 });
 
+test("Bridge delivers the adjusted Message Context without re-adding Source", async (t) => {
+  let receivedPrompt = "";
+  const runnerFactory = () => ({
+    async run({ prompt, onEvent }) {
+      receivedPrompt = prompt;
+      onEvent({ type: "complete", text: "done" });
+      return { text: "done" };
+    },
+    stop() { return true; },
+  });
+  const { server, base } = await startTestServer(runnerFactory);
+  t.after(() => server.close());
+  const makeSource = (id, text) => ({
+    id,
+    text,
+    author: "Author " + id,
+    timestamp: "2026-08-30T01:02:03Z",
+    channel: { id: "channel", name: "#engineering" },
+    sourceLink: "https://discord.com/channels/1/2/" + id,
+  });
+  const source = makeSource("C", "source");
+  const response = await fetch(base + "/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      instruction: "確認",
+      sourceMessage: source,
+      messageContext: [makeSource("A", "ancestor A"), makeSource("B", "ancestor B"), source, makeSource("E", "descendant E")],
+    }),
+  });
+  await response.text();
+  assert.equal(response.status, 200);
+  assert.match(receivedPrompt, /ancestor A/);
+  assert.match(receivedPrompt, /ancestor B/);
+  assert.match(receivedPrompt, /source/);
+  assert.match(receivedPrompt, /descendant E/);
+  assert.doesNotMatch(receivedPrompt, /sibling D/);
+  assert.equal(receivedPrompt.match(/Source Link:/g)?.length, 4);
+});
+
 test("Bridge resumes a stateless session using its Claude session ID", async (t) => {
   const sessionId = "123e4567-e89b-12d3-a456-426614174000";
   let receivedResumeId;
