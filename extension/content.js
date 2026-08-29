@@ -278,11 +278,28 @@
     const actionLabel = element("label", "dce-field-label", "Action Preset");
     const action = document.createElement("select");
     action.className = "dce-select";
-    action.append(new Option("自由入力", "freeform"));
+    action.disabled = true;
     actionLabel.append(action);
     dialog.append(actionLabel);
     const actionStatus = element("div", "dce-muted", "Bridge の Action Preset を読み込んでいます…");
     dialog.append(actionStatus);
+
+    const projectRow = element("div", "dce-muted dce-project-row");
+    const projectLabel = element("span", null, "作業先: 一般 (General Workspace)");
+    projectRow.append(projectLabel);
+    const projectToggle = element("button", "dce-link-button", "Projectを選択");
+    projectToggle.type = "button";
+    projectRow.append(projectToggle);
+    const projectSelect = document.createElement("select");
+    projectSelect.className = "dce-select";
+    projectSelect.hidden = true;
+    projectSelect.append(new Option("一般（General Workspace）", ""));
+    projectToggle.addEventListener("click", () => {
+      projectSelect.hidden = false;
+      projectToggle.hidden = true;
+      projectLabel.textContent = "作業先:";
+    });
+    dialog.append(projectRow, projectSelect);
 
     const instructionLabel = element("label", "dce-field-label", "追加指示");
     const instruction = document.createElement("textarea");
@@ -324,6 +341,7 @@
           messageContext: contextState.messages.filter((message) => contextState.includedIds.has(message.id)),
           actionId: action.value,
           instruction: instruction.value,
+          projectId: projectSelect.value || undefined,
         },
       });
       if (result?.ok) {
@@ -371,6 +389,13 @@
       }
       actionStatus.textContent = "Bridge の設定から読み込みました";
       for (const preset of config.actions || []) action.append(new Option(preset.label, preset.id));
+      action.disabled = false;
+      projectSelect.options[0].title = config.workspace || "";
+      for (const project of config.projects || []) {
+        const option = new Option(project.label, project.id);
+        option.title = project.path;
+        projectSelect.append(option);
+      }
     });
   }
 

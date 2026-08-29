@@ -33,7 +33,8 @@ node bridge/src/index.js --config bridge/config.json
   "host": "127.0.0.1",
   "port": 3456,
   "workspace": "/Users/me/claude-discord-workspace",
-  "projectRoots": [],
+  "projectRoots": [{ "path": "/Users/me/src", "depth": 2 }],
+  "projectDepth": 2,
   "actions": [
     {
       "id": "research",
@@ -43,6 +44,10 @@ node bridge/src/index.js --config bridge/config.json
   ]
 }
 ```
+
+`workspace` は General Workspace で、Project を選ばない General Session の cwd になります。`projectRoots` の各 `path` を `depth`（省略時は `projectDepth`、既定 2）階層まで走査し、`.git` を含むディレクトリを Project として拡張へ公開します。root 自体が Git リポジトリならその root が Project になります。
+
+`actions` を省略すると Bridge 既定の Action Preset（`jira` Jiraに起票、`github-issue` GitHub Issue化、`summarize` 要約、`research` 調査、`critique` 批評、`freeform` 自由入力）を使います。「自由入力」も Bridge から配信される preset で、拡張側に固定の preset はありません。`bridge/config.example.json` に同じ一覧があります。
 
 `claudeCommand` を設定すると、CLI の場所やテスト用のラッパーを変更できます。
 
@@ -58,7 +63,7 @@ Message Context に含まれる Discord の添付ファイルは、ファイル�
 4. 拡張の設定画面で Bridge URL（既定 `http://127.0.0.1:3456`）を保存する
 5. Discord Web を再読み込みする
 
-Discord のメッセージをホバーすると Claude ボタンが表示されます。押すと Source Message の確認、Action Preset の選択、自由入力の指示を行えます。送信後は Side Panel が開き、Current Session の Claude 出力を SSE で受け取って Markdown 表示し、最終回答をコピーできます。完了後は同じ Claude Session へ追加指示を送り、実行中の turn を停止できます。
+Discord のメッセージをホバーすると Claude ボタンが表示されます。押すと Source Message の確認、Bridge から取得した Action Preset の選択、追加指示の入力を行えます。作業先は既定で 一般 (General Workspace) です。「Projectを選択」を押すと Bridge が見つけた Project の一覧が表示され、選ぶとその Git リポジトリを cwd とする Project Session を開始します。送信後は Side Panel が開き、Current Session の Claude 出力を SSE で受け取って Markdown 表示し、最終回答をコピーできます。完了後は同じ Claude Session へ追加指示を送り、実行中の turn を停止できます。
 
 Side Panel のセッション一覧は Chrome の `storage.local` に保存した索引を起動時に Bridge と照合します。Bridge は Claude Code 2.1.251 が使う設定ルート（通常 `~/.claude`、`CLAUDE_CONFIG_DIR` または `claudeConfigDir` 指定時はそのルート）配下の `projects/<cwd-with-separators-replaced-by->/<session-id>.jsonl` を実在性の根拠にします。初回 turn では Claude に `[DCE_SESSION_TITLE]短いタイトル[/DCE_SESSION_TITLE]` マーカーを回答冒頭へ出すよう依頼し、Bridge がマーカーを除去してタイトルとして一覧へ保存します。
 
@@ -81,4 +86,5 @@ npm run typecheck # JS-only 構成のため構文検査を実行
 - Issue #4 では Message Context の添付ファイルを Bridge がダウンロードして Claude Code へ渡します。動画・音声・`attachmentMaxBytes` 超過・種類不明のファイルは metadata と URL のみで、実体は取得しません。DOM から得た添付は MIME type とサイズが空になり、page world の message cache が見つかった場合にそれらで補完します。
 - Claude Code CLI の `stream-json` 出力（`stream_event` 内の partial delta と後続の assistant 全文を含む）を delta / tool / result に正規化します。未知の JSON イベントや JSON ではない stdout の診断行は回答へ混ぜず無視します。
 - Issue #2 では Side Panel のセッション一覧、同じ Claude Session への追加指示、実行中 turn の停止、完了後の未読 badge と閲覧時の既読化を提供します。Bridge 再起動後も Claude JSONL が残っているセッションを再表示できます。
+- Issue #5 では Bridge の設定ファイルで General Workspace・Project root（走査深さ付き）・Action Preset を管理し、送信 UI は既定で General Workspace、必要なときだけ Project を選んで Project Session を開始します。Project の自動検出は `.git` を含むディレクトリのみで、Handoff は対象外です。
 - 手動 archive/delete、OS 通知、Bridge 認証、Discord への投稿、自動リトライは対象外です。Discord の内部 cache は現在の Webpack から最小限に探索するため、Discord の更新で利用できなくなる可能性があります。

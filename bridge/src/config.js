@@ -5,9 +5,14 @@ import { extractSessionTitle } from "./prompt.js";
 
 export const DEFAULT_ACTIONS = [
   {
-    id: "research",
-    label: "調査",
-    prompt: "Discordの内容について必要な調査を行い、根拠と次のアクションを整理してください。",
+    id: "jira",
+    label: "Jiraに起票",
+    prompt: "Discordの会話をもとにJiraチケットを作成してください。元Discord投稿のSource Linkをチケット本文へ記載してください。",
+  },
+  {
+    id: "github-issue",
+    label: "GitHub Issue化",
+    prompt: "Discordの会話をもとにGitHub Issueを作成してください。元Discord投稿のSource LinkをIssue本文へ記載してください。",
   },
   {
     id: "summarize",
@@ -15,9 +20,19 @@ export const DEFAULT_ACTIONS = [
     prompt: "Discordの内容を要約し、重要な論点と未決事項を整理してください。",
   },
   {
+    id: "research",
+    label: "調査",
+    prompt: "Discordの内容について必要な調査を行い、根拠と次のアクションを整理してください。",
+  },
+  {
     id: "critique",
     label: "批評",
     prompt: "Discordの提案や議論を批評し、前提、リスク、改善案を整理してください。",
+  },
+  {
+    id: "freeform",
+    label: "自由入力",
+    prompt: "",
   },
 ];
 

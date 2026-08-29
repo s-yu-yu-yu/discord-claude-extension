@@ -45,6 +45,7 @@ function serializeState(state) {
     sessionId: state.sessionId,
     claudeSessionId: state.claudeSessionId,
     cwd: state.cwd,
+    projectId: state.projectId || null,
     title: state.title,
     sourceMessage: state.sourceMessage,
     instruction: state.instruction,
@@ -110,6 +111,7 @@ function stateFromRecord(record) {
     sessionId: record.sessionId || record.claudeSessionId,
     claudeSessionId: record.claudeSessionId || record.sessionId,
     cwd: record.cwd,
+    projectId: record.projectId || null,
     title: record.title || "Claude Session",
     sourceMessage: record.sourceMessage,
     instruction: record.instruction || "",
@@ -216,6 +218,7 @@ function applyStreamEvent(state, event, data) {
     }
     state.claudeSessionId = data.claudeSessionId || data.sessionId || state.claudeSessionId;
     state.cwd = data.cwd || state.cwd;
+    state.projectId = data.projectId ?? state.projectId;
   } else if (event === "title") {
     if (data.title) state.title = data.title;
   } else if (event === "delta") {
@@ -297,6 +300,7 @@ async function startSession(message, sender, sendResponse) {
     sessionId: `pending-${crypto.randomUUID()}`,
     claudeSessionId: null,
     cwd: null,
+    projectId: message.payload.projectId || null,
     title: message.payload.instruction?.trim().slice(0, 48) || "Discord Source Message",
     sourceMessage: message.payload.sourceMessage,
     instruction: message.payload.instruction || "",

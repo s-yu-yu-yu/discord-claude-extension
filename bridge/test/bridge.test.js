@@ -171,13 +171,51 @@ setTimeout(() => console.log(JSON.stringify({ type: "result", result: "R" })), 5
   await completion;
 });
 
-test("configured project roots expose only git directories", async () => {
+test("configured project roots expose only git directories", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "discord-projects-"));
   const project = path.join(root, "project");
+  const nested = path.join(root, "group", "nested");
   await mkdir(path.join(project, ".git"), { recursive: true });
+  await mkdir(path.join(nested, ".git"), { recursive: true });
+  await mkdir(path.join(root, "a", "b", "too-deep", ".git"), { recursive: true });
   await mkdir(path.join(root, "not-a-project"), { recursive: true });
-  const config = normalizeConfig({ projectRoots: [{ path: root, depth: 2 }] });
-  assert.deepEqual(listProjects(config).map((item) => item.path), [project]);
+  const config = normalizeConfig({ projectRoots: [{ path: root }] });
+  assert.deepEqual(listProjects(config).map((item) => item.path).sort(), [nested, project]);
+  assert.deepEqual(normalizeConfig({}).actions.map((action) => action.id), ["jira", "github-issue", "summarize", "research", "critique", "freeform"]);
+  const { server, base, config: served } = await startTestServer(() => ({ run: async () => ({}), stop() {} }), { projectRoots: [{ path: root, depth: 1 }] });
+  t.after(() => server.close());
+  const body = await (await fetch(`${base}/config`)).json();
+  assert.equal(body.workspace, served.workspace);
+  assert.deepEqual(body.projects, [{ id: project, label: "project", path: project }]);
+  assert.deepEqual(body.actions, [{ id: "research", label: "調査" }]);
+});
+
+test("Bridge starts a Project Session in the selected Project", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "discord-project-session-"));
+  const project = path.join(root, "repo");
+  await mkdir(path.join(project, ".git"), { recursive: true });
+  let receivedCwd;
+  const runnerFactory = () => ({
+    async run({ cwd, onEvent }) {
+      receivedCwd = cwd;
+      onEvent({ type: "complete", text: "done" });
+      return { text: "done" };
+    },
+    stop() { return true; },
+  });
+  const { server, base } = await startTestServer(runnerFactory, { projectRoots: [{ path: root }] });
+  t.after(() => server.close());
+  const response = await fetch(`${base}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId: project, instruction: "直す", sourceMessage: { text: "bug", sourceLink: "https://discord.com/channels/1/2/3" } }),
+  });
+  const body = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(receivedCwd, project);
+  const first = JSON.parse(body.split("\n\n")[0].replace(/^event: session\ndata: /, ""));
+  assert.equal(first.projectId, project);
+  assert.equal(first.cwd, project);
 });
 
 test("Bridge streams session, delta, tool and completion events over SSE", async (t) => {

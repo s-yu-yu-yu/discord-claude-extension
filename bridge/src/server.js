@@ -100,7 +100,8 @@ function actionFor(config, actionId) {
 function publicConfig(config) {
   return {
     actions: config.actions.map(({ id, label }) => ({ id, label })),
-    projects: listProjects(config).map(({ id, label }) => ({ id, label })),
+    projects: listProjects(config).map(({ id, label, path }) => ({ id, label, path })),
+    workspace: config.workspace,
   };
 }
 
@@ -308,7 +309,7 @@ export function createBridgeServer({ config, runnerFactory = createClaudeRunner 
       }
       sessions.set(session.id, session);
       sseHeaders(res);
-      sendSse(res, "session", { sessionId: session.id, claudeSessionId: session.id, cwd: session.cwd });
+      sendSse(res, "session", { sessionId: session.id, claudeSessionId: session.id, cwd: session.cwd, projectId: session.projectId });
       await attachSessionFiles({ config, session, res });
       const prompt = buildPrompt({
         action: actionFor(config, body.actionId),

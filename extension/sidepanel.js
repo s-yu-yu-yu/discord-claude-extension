@@ -91,7 +91,8 @@ function renderState(state) {
   $("#conversation").hidden = !state;
   if (!state) { renderSessions(); return; }
   upsertSession(state);
-  $("#session-source").textContent = state.title || state.sourceMessage?.sourceLink || "Current Session";
+  $("#session-source").textContent = (state.title || state.sourceMessage?.sourceLink || "Current Session") +
+    (state.projectId && state.cwd ? " · " + state.cwd.split("/").pop() : " · 一般");
   const status = $("#status");
   status.className = `status ${state.status || "running"}`;
   status.textContent = state.error || ({ running: "実行中", complete: "完了", stopped: "停止", error: "エラー" }[state.status] || state.status || "実行中");
