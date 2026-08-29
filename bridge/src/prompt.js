@@ -4,7 +4,8 @@ function valueOrUnknown(value) {
 
 export const SESSION_TITLE_START = "[DCE_SESSION_TITLE]";
 export const SESSION_TITLE_END = "[/DCE_SESSION_TITLE]";
-const TITLE_INSTRUCTION = `最初に、あなたがこの作業に付ける短いタイトルを ${SESSION_TITLE_START}タイトル${SESSION_TITLE_END} の形式で1行だけ出力してください。タイトルは80文字以内にし、その後に通常の回答を続けてください。マーカー自体は通常の回答へ繰り返しません。`;
+// The Bridge strips this marker from the stream and uses it as the Side Panel title.
+const TITLE_INSTRUCTION = `回答の1行目に、この作業の短いタイトル（80文字以内）を ${SESSION_TITLE_START}タイトル${SESSION_TITLE_END} の形式で出力してください。`;
 
 export function extractSessionTitle(text) {
   const match = String(text || "").match(/\[DCE_SESSION_TITLE\]\s*([\s\S]*?)\s*\[\/DCE_SESSION_TITLE\]/i);
@@ -21,13 +22,9 @@ function formatAttachment(attachment) {
   const fields = [attachment.name, attachment.mimeType, attachment.size ? `${attachment.size} bytes` : null, attachment.url]
     .filter(Boolean);
   if (attachment.localPath) fields.push(`Local file: ${attachment.localPath}`);
-  else if (attachment.skipped) fields.push("取得しない（動画・音声など大容量メディア）");
+  else if (attachment.skipped) fields.push("未取得（大容量メディア）");
   else if (attachment.error) fields.push(`取得失敗: ${attachment.error}`);
   return fields.join(" | ");
-}
-
-function hasLocalFile(messages) {
-  return messages.some((message) => message?.attachments?.some((attachment) => attachment.localPath));
 }
 
 export function formatMessage(message, index) {
@@ -44,35 +41,28 @@ export function formatMessage(message, index) {
   return lines.join("\n");
 }
 
+// "## 依頼" = Action Preset prompt + free-form instruction; only what the user actually provided.
+function requestSection(action, instruction, fallback) {
+  const parts = [action?.prompt?.trim(), instruction.trim()].filter(Boolean);
+  return ["## 依頼", ...(parts.length > 0 ? parts : [fallback])];
+}
+
 export function buildPrompt({ action, instruction = "", sourceMessage, messageContext = [] }) {
   const context = messageContext.length > 0 ? messageContext : [sourceMessage];
   const source = sourceMessage || context[0];
-  const contextLabel = context.length > 1 ? "Source Message と Message Context" : "Source Message";
   const additionalContext = context.filter((message) => {
     if (!source || !message) return true;
     return message === source || (message.id && source.id && message.id === source.id) ||
       (message.sourceLink && source.sourceLink && message.sourceLink === source.sourceLink) ? false : true;
   });
-  const actionPrompt = action?.prompt?.trim() || "DiscordのSource Messageについて、依頼内容に対応してください。";
-  const instructionText = instruction.trim() || "（追加指示なし）";
   return [
-    `あなたは Claude Code です。以下の Discord ${contextLabel} を作業コンテキストとして扱ってください。`,
-    "各メッセージの Source Link は原文へ戻るためのリンクです。必要に応じて回答や作成物へ記載してください。",
-    ...(hasLocalFile([source, ...context])
-      ? ["添付ファイルのうち Local file が示されているものは Bridge がダウンロード済みです。Read ツールでそのパスを読んで内容を確認してください。"]
-      : []),
     TITLE_INSTRUCTION,
     "",
-    "## Action Preset",
-    actionPrompt,
-    "",
-    "## User instruction",
-    instructionText,
+    ...requestSection(action, instruction, "Source Message に対応してください。"),
     "",
     "## Source Message",
     formatMessage(source, 0),
-    "",
-    ...(context.length > 1 ? ["", "## Message Context", ...additionalContext.map((message, index) => formatMessage(message, index))] : []),
+    ...(additionalContext.length > 0 ? ["", "## Message Context", ...additionalContext.map((message, index) => formatMessage(message, index))] : []),
   ].join("\n");
 }
 
@@ -80,14 +70,7 @@ export function buildPrompt({ action, instruction = "", sourceMessage, messageCo
 export function buildContextAppendPrompt({ action, instruction = "", messages = [], sourceMessage }) {
   const context = messages.length > 0 ? messages : [sourceMessage];
   return [
-    "以下は同じ Discord 会話から追加で選択された Message Context です。既存の作業コンテキストに加えて扱ってください。各メッセージの Source Link は原文へ戻るためのリンクです。",
-    ...(hasLocalFile(context)
-      ? ["添付ファイルのうち Local file が示されているものは Bridge がダウンロード済みです。Read ツールでそのパスを読んで内容を確認してください。"]
-      : []),
-    ...(action?.prompt?.trim() ? ["", "## Action Preset", action.prompt.trim()] : []),
-    "",
-    "## User instruction",
-    instruction.trim() || "（追加指示なし）",
+    ...requestSection(action, instruction, "追加分を踏まえて作業を続けてください。"),
     "",
     "## 追加 Message Context",
     ...context.map((message, index) => formatMessage(message, index)),
@@ -99,31 +82,24 @@ const HANDOFF_HEADINGS = ["## 調査結果", "## 決定事項", "## Source Link"
 // Asked of the General Session (as a fork) to produce the Handoff itself.
 export function buildHandoffRequestPrompt({ instruction = "", projectPath }) {
   return [
-    `このセッションの作業を、Project \`${projectPath}\` を cwd とする新しい Project Session へ引き継ぎます。`,
-    "これまでの会話内容から Handoff を作成してください。出力は Markdown の Handoff のみとし、前置きや補足は書かないでください。",
-    `先頭に \`対象 Project: ${projectPath}\` の1行を置き、続けて次の見出しを必ずこの順で使ってください。`,
+    `この作業を Project \`${projectPath}\` の新しいセッションへ引き継ぎます。これまでの会話から Handoff を Markdown で作成してください。出力は Handoff 本体のみ。`,
+    `先頭に \`対象 Project: ${projectPath}\` の1行、続けて次の見出しをこの順で使ってください。`,
     ...HANDOFF_HEADINGS,
-    "Source Link には Message Context の Discord permalink を、関連リンクには判明している Jira / GitHub の URL を記載し、不明な項目は「（なし）」と書いてください。",
-    "",
-    "## 移行時の追加指示",
-    instruction.trim() || "（なし）",
+    "Source Link には関連する Discord permalink、関連リンクには判明している Jira / GitHub の URL を書き、不明な項目は「（なし）」とします。",
+    ...(instruction.trim() ? ["", "## 移行時の追加指示", instruction.trim()] : []),
   ].join("\n");
 }
 
 // Initial prompt of the new Project Session.
-export function buildHandoffPrompt({ handoff, instruction = "", originalSessionId, projectPath }) {
+export function buildHandoffPrompt({ handoff, instruction = "", originalSessionId }) {
   return [
-    `あなたは Claude Code です。以下は General Session からの Handoff です。この Project（cwd: ${projectPath}）で作業を続けてください。`,
     TITLE_INSTRUCTION,
+    "",
+    `General Session からの Handoff を受けて、この Project で作業を続けてください。元セッション: \`claude --resume ${originalSessionId}\``,
     "",
     "## Handoff",
     handoff,
-    "",
-    "## 元セッション",
-    `元の General Session は \`claude --resume ${originalSessionId}\` で参照できます。`,
-    "",
-    "## 移行時の追加指示",
-    instruction.trim() || "（なし）",
+    ...(instruction.trim() ? ["", "## 追加指示", instruction.trim()] : []),
   ].join("\n");
 }
 

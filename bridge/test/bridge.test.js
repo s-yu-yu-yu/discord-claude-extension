@@ -35,6 +35,11 @@ test("buildPrompt preserves Source Message metadata and links", () => {
   assert.match(prompt, /\[DCE_SESSION_TITLE\]タイトル\[\/DCE_SESSION_TITLE\]/);
   assert.equal(prompt.match(/Source Link:/g)?.length, 1);
   assert.doesNotMatch(prompt, /## Message Context/);
+  assert.match(prompt, /## 依頼\n調査する\n原因を確認\n/);
+  // Only tool-specific content goes into the prompt: no role preamble, no empty placeholders.
+  const bare = buildPrompt({ action: { prompt: "" }, sourceMessage: source });
+  assert.doesNotMatch(bare, /Claude Code|追加指示なし|User instruction/);
+  assert.match(bare, /## 依頼\nSource Message に対応してください。/);
 });
 
 test("normalizes Claude partial stream events and avoids assistant full-text duplication", () => {
@@ -360,7 +365,7 @@ test("Bridge appends newly selected Message Context to a resumed session", async
   assert.equal(response.status, 200);
   assert.equal(received.resumeId, sessionId);
   assert.match(received.prompt, /## 追加 Message Context/);
-  assert.match(received.prompt, /## Action Preset\n調査する/);
+  assert.match(received.prompt, /## 依頼\n調査する/);
   assert.match(received.prompt, /https:\/\/discord\.com\/channels\/1\/2\/11/);
   assert.match(received.prompt, /https:\/\/discord\.com\/channels\/1\/2\/12/);
   assert.equal(received.prompt.match(/Source Link:/g)?.length, 2);
