@@ -1,0 +1,5 @@
+node_modules/
+bridge/config.json
+bridge/tmp/
+dist/
+.DS_Store

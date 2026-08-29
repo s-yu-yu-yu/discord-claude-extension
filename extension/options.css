@@ -1,0 +1,8 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; }
+body { background: #f3f4f6; color: #1f2937; margin: 0; }
+.card { background: #fff; border-radius: 9px; box-shadow: 0 4px 20px rgb(0 0 0 / 10%); margin: 48px auto; max-width: 540px; padding: 26px; }
+h1 { font-size: 22px; margin: 0 0 10px; } p { line-height: 1.6; }
+label { display: block; font-weight: 700; margin: 20px 0 6px; }
+input { border: 1px solid #d1d5db; border-radius: 5px; box-sizing: border-box; font: inherit; padding: 9px; width: 100%; }
+.actions { display: flex; gap: 8px; margin-top: 14px; }.actions button { background: #4f46e5; border: 0; border-radius: 5px; color: #fff; cursor: pointer; font: inherit; padding: 8px 13px; }.actions button + button { background: #e5e7eb; color: #374151; }
+#status { min-height: 1.5em; }.note { color: #6b7280; font-size: 12px; }

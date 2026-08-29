@@ -1,0 +1,52 @@
+.dce-message-root { position: relative !important; }
+.dce-claude-button {
+  border: 0;
+  border-radius: 4px;
+  background: #d9f99d;
+  color: #1a2e05;
+  cursor: pointer;
+  font: 600 12px/24px sans-serif;
+  height: 24px;
+  margin: 2px;
+  padding: 0 7px;
+  white-space: nowrap;
+}
+.dce-claude-button:hover { background: #bef264; }
+.dce-message-root > .dce-claude-button { display: none; position: absolute; right: 8px; top: 4px; z-index: 2; }
+.dce-message-root:hover > .dce-claude-button { display: block; }
+.dce-composer {
+  align-items: center;
+  background: rgb(0 0 0 / 68%);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: fixed;
+  z-index: 10000;
+}
+.dce-dialog {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 16px 60px rgb(0 0 0 / 35%);
+  box-sizing: border-box;
+  color: #1f2937;
+  font: 14px/1.5 system-ui, sans-serif;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 20px;
+  width: min(600px, calc(100vw - 32px));
+}
+.dce-dialog-header, .dce-dialog-footer { align-items: center; display: flex; justify-content: space-between; }
+.dce-title { font-size: 20px; margin: 0; }
+.dce-close { background: transparent; border: 0; color: #6b7280; cursor: pointer; font-size: 24px; line-height: 1; }
+.dce-source-preview { background: #f3f4f6; border-radius: 7px; margin: 16px 0; padding: 12px; }
+.dce-label, .dce-field-label { display: flex; flex-direction: column; font-weight: 700; gap: 6px; }
+.dce-source-author, .dce-muted { color: #6b7280; font-size: 12px; }
+.dce-source-text { margin: 5px 0; max-height: 100px; overflow: auto; white-space: pre-wrap; }
+.dce-source-link, .dce-settings-link { color: #2563eb; font-size: 12px; }
+.dce-select, .dce-textarea { border: 1px solid #d1d5db; border-radius: 5px; box-sizing: border-box; font: inherit; padding: 8px; width: 100%; }
+.dce-textarea { margin: 8px 0 16px; resize: vertical; }
+.dce-error { background: #fef2f2; border-radius: 5px; color: #b91c1c; display: flex; flex-direction: column; gap: 3px; margin: 8px 0; padding: 8px; }
+.dce-secondary, .dce-primary { border: 0; border-radius: 5px; cursor: pointer; font: 600 14px/32px system-ui, sans-serif; padding: 0 14px; }
+.dce-secondary { background: #e5e7eb; color: #374151; margin-right: 8px; }
+.dce-primary { background: #4f46e5; color: #fff; }
+.dce-primary:disabled { cursor: wait; opacity: .6; }

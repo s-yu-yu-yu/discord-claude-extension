@@ -1,0 +1,16 @@
+{
+  "name": "discord-claude-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A small Chrome-to-Claude Code bridge for Discord Web source messages.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "lint": "node scripts/check.mjs",
+    "typecheck": "node scripts/check.mjs --typecheck",
+    "test": "node --test bridge/test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

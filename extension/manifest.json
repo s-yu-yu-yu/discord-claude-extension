@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Discord Claude Bridge",
+  "description": "Send a Discord Source Message to Claude Code through a local Bridge.",
+  "version": "0.1.0",
+  "permissions": ["storage", "sidePanel", "clipboardWrite"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Discord Claude"
+  },
+  "options_page": "options.html",
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://discord.com/*", "https://canary.discord.com/*", "https://ptb.discord.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

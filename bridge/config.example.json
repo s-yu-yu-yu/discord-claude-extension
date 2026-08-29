@@ -1,0 +1,25 @@
+{
+  "host": "127.0.0.1",
+  "port": 3456,
+  "workspace": "~/claude-discord-workspace",
+  "claudeCommand": "claude",
+  "projectRoots": [],
+  "projectDepth": 2,
+  "actions": [
+    {
+      "id": "research",
+      "label": "調査",
+      "prompt": "Discordの内容について必要な調査を行い、根拠と次のアクションを整理してください。"
+    },
+    {
+      "id": "summarize",
+      "label": "要約",
+      "prompt": "Discordの内容を要約し、重要な論点と未決事項を整理してください。"
+    },
+    {
+      "id": "critique",
+      "label": "批評",
+      "prompt": "Discordの提案や議論を批評し、前提、リスク、改善案を整理してください。"
+    }
+  ]
+}
