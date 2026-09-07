@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Discord Claude Bridge",
   "description": "Send a Discord Source Message to Claude Code through a local Bridge.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "permissions": [
     "storage",
     "sidePanel",

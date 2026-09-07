@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { runtimeEnvironment } from "./platform.js";
 import { extractSessionTitle } from "./prompt.js";
 
 export const DEFAULT_ACTIONS = [
@@ -36,7 +37,7 @@ export const DEFAULT_ACTIONS = [
   },
 ];
 
-const DEFAULT_TERMINAL_COMMAND = ["darwin", "win32"].includes(process.platform) ? "auto" : "";
+const DEFAULT_TERMINAL_COMMAND = ["darwin", "win32", "wsl2"].includes(runtimeEnvironment()) ? "auto" : "";
 
 function expandHome(value) {
   if (typeof value !== "string") return value;

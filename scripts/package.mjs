@@ -12,8 +12,9 @@ rmSync(output, { recursive: true, force: true });
 mkdirSync(output, { recursive: true });
 // An allowlist keeps config.json, credentials, session history, and local files out.
 const files = ["package.json", "README.md", "bridge/config.example.json",
-  "docs/setup.md", "docs/ai-setup.md", "docs/distribution.md", "docs/usage.md",
+  "docs/setup-wsl2.md", "docs/setup.md", "docs/ai-setup.md", "docs/distribution.md", "docs/usage.md",
   "scripts/setup.mjs", "scripts/doctor.mjs", "scripts/service.mjs",
+  "scripts/wsl-process.mjs", "scripts/wsl-bridge.mjs", "scripts/service-wsl.mjs", "scripts/service-wsl.ps1", "scripts/run-wsl-bridge.ps1",
   "scripts/service-windows.ps1", "scripts/run-bridge.ps1"];
 for (const directory of ["bridge/src", "extension"]) {
   for (const entry of readdirSync(path.join(root, directory), { withFileTypes: true })) {

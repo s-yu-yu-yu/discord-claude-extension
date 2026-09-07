@@ -27,7 +27,7 @@ Chrome の Side Panel に表示
 
 ## 2. 最初の準備（1回だけ）
 
-Windows / macOSの導入は [社内向け導入ガイド](setup.md) を参照してください。Node.js 22以上、ネイティブ版Claude Code CLI、Google Chromeを使います。
+macOS / Windows / WSL2の導入は [社内向け導入ガイド](setup.md) を参照してください。Node.js 22以上、環境に対応するClaude Code CLI、Google Chromeを使います。
 
 初期設定後は、展開フォルダで次を実行するとBridgeが起動します。
 

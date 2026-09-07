@@ -2,9 +2,9 @@
 
 Discord Web のメッセージを Source Message として選び、ローカルの Bridge から Claude Code の General Session に送る Chrome 拡張です。v1 は Google Chrome と Discord Web を対象にし、Discord Bot や Bridge 認証は使用しません。
 
-## 社内向け配布版（0.2.0）
+## 社内向け配布版（0.3.0）
 
-Windowsネイティブ版とmacOSに対応する配布構成です。初めて使う方は [導入ガイド](docs/setup.md)、ZIPを作成する方は [配布手順と実機確認表](docs/distribution.md) を参照してください。Windows実機での確認は未実施です。
+macOS・Windowsネイティブ・WSL2に対応する配布構成です。WSL2ではLinux側のBridgeとWindows側のChromeを接続します。初めて使う方は [導入ガイド](docs/setup.md)、ZIPを作成する方は [配布手順と実機確認表](docs/distribution.md) を参照してください。Windows/WSL2での実Claude・Chrome連携確認は未実施です。
 
 Claude Codeに導入を任せる場合は、展開フォルダで「`docs/ai-setup.md`を読んでセットアップして」と依頼してください。[AI向け手順](docs/ai-setup.md)に環境確認・既存設定の保持・完了判定を記載しています。
 
@@ -85,7 +85,7 @@ npm run bridge:uninstall  # 登録解除
 
 ログは `~/Library/Logs/claude-bridge.log` に出ます。`bridge/config.json` を変更したら `npm run bridge:install` を再実行すると再起動します。Bridge は落ちても launchd が再起動します。
 
-`terminalCommand` の既定値はmacOS/Windowsで`auto`です。macOSはTerminal.app、WindowsはWindows PowerShellで再開します。`""`を設定すると起動を無効にし、コマンドのコピーだけ利用できます。カスタム文字列では`{command}`が再開コマンドに置換され、macOSはsh、WindowsはPowerShellで実行します。通常は`auto`を使ってください。Windowsの自動起動登録は [導入ガイド](docs/setup.md) を参照してください。
+`terminalCommand` の既定値はmacOS/Windows/WSL2で`auto`です。macOSはTerminal.app、WindowsはWindows PowerShell、WSL2はWindows端末から同じディストリビューション・LinuxユーザーのClaudeを再開します。`""`を設定すると起動を無効にし、コマンドのコピーだけ利用できます。カスタム文字列では`{command}`が再開コマンドに置換され、macOSはsh、WindowsはPowerShellで実行します。通常は`auto`を使ってください。WSL2の導入・自動起動は [WSL2手順](docs/setup-wsl2.md) を参照してください。Windowsの自動起動登録は [導入ガイド](docs/setup.md) を参照してください。
 
 Message Context に含まれる Discord の添付ファイルは、ファイル名・URL・MIME type・サイズを prompt に記載します。画像、PDF、テキスト、ソースコード、JSON、CSV、ログなどの小さなファイルは Bridge が `attachmentsDir`（既定は OS の一時ディレクトリ配下の `claude-bridge-attachments`）の Claude Session ごとのサブディレクトリへダウンロードし、`--add-dir` で Claude Code から読めるようにします。`attachmentMaxBytes`（既定 20971520 = 20 MB）を超えるファイル、動画・音声、種類を判別できないファイルはダウンロードせず metadata と URL のみを渡します。ダウンロードの失敗は Side Panel に tool 行として表示され、残りの Message Context はそのまま送信されます。ダウンロード済みファイルは Bridge が起動時と1時間ごとに確認し、24時間を過ぎたものを削除します。
 

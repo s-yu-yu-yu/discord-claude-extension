@@ -1,4 +1,6 @@
 // Registers the Bridge for the current login account.
+import { runtimeEnvironment } from "../bridge/src/platform.js";
+import { runWslService } from "./service-wsl.mjs";
 import { copyFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -38,6 +40,9 @@ const plist = () => `<?xml version="1.0" encoding="UTF-8"?>
 
 const launchctl = (...args) => spawnSync("launchctl", args, { encoding: "utf8" });
 
+if (runtimeEnvironment() === "wsl2") {
+  process.exit(await runWslService(command, root));
+}
 if (process.platform === "win32") {
   if (!["install", "uninstall", "status"].includes(command)) {
     console.error("usage: node scripts/service.mjs install|uninstall|status");
@@ -52,7 +57,7 @@ if (process.platform === "win32") {
   process.exit(result.status ?? 1);
 }
 if (process.platform !== "darwin") {
-  console.error("This service helper supports macOS and native Windows only.");
+  console.error("This service helper supports macOS, native Windows, and WSL2 only.");
   process.exit(1);
 }
 if (command === "install") {

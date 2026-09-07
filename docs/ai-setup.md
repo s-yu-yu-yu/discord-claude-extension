@@ -1,6 +1,6 @@
 # Claude Code向けセットアップ手順
 
-この文書は、利用者からセットアップを依頼されたClaude Codeが実行するための手順です。対象はmacOS、またはWindowsネイティブ環境。既存のClaude Code・認証・Macの構成を利用し、Discord Claude Bridgeを同じPCに追加します。配布ZIPでもリポジトリでも同じ手順です。
+この文書は、利用者からセットアップを依頼されたClaude Codeが実行するための手順です。対象はmacOS・Windowsネイティブ・WSL2。既存のClaude Code・認証・Macの構成を利用し、Discord Claude Bridgeを同じPCに追加します。配布ZIPでもリポジトリでも同じ手順です。
 
 ## 進め方
 
@@ -13,19 +13,20 @@
 ## 1. 実行環境を確かめる
 
 ```sh
-node -p "JSON.stringify({platform:process.platform,arch:process.arch,node:process.version,home:require('node:os').homedir(),cwd:process.cwd()})"
+node -p "JSON.stringify({platform:process.platform,release:require('node:os').release(),distro:process.env.WSL_DISTRO_NAME,arch:process.arch,node:process.version,home:require('node:os').homedir(),cwd:process.cwd()})"
 ```
 
 - `darwin`: Mac手順を使います。既存のlaunchd・Terminal.appを利用します。
 - `win32`: Windows手順を使います。BridgeもNodeもClaudeもWindows側で動かします。
-- `linux`など: この配布手順の対象外です。WSLならWindows側でClaude Codeを開いてこの文書を読み直すよう案内します。既存環境の削除・移行はしません。
+- `linux`かつカーネルが標準WSL2で`WSL_DISTRO_NAME`がある: **[WSL2手順](setup-wsl2.md)を読んでから**進めます。Windowsの`wsl.exe --list --verbose`で対象がVERSION 2と確認し、同じLinux版Node・Claude・認証を利用します。Windows版への移行はしません。
+- 通常のLinux、WSL1、またはWSL2か判別できない環境: 自動登録を進めず環境を確認します。カーネル名だけでWSL1から変換するなどの操作はしません。
 - Nodeがない、または22未満: 利用者へ会社指定のNode導入方法を確認します。[導入ガイド](setup.md)を案内し、導入後に再開します。
 
 展開先がZIP内・一時フォルダなら、継続利用する設置先を利用者に確認します。既に登録された拡張や自動起動があるフォルダは勝手に移動しません。
 
 ## 2. 既存のClaudeを見つける
 
-Macのシェルでは`command -v claude`、Windows PowerShellでは`Get-Command claude -All | Select-Object CommandType,Source`で実体を確認します。Windowsではネイティブ`claude.exe`を使用します。既定の`~/.local/bin/claude.exe`も候補です。`claude.cmd`しかなければ、既存のnpm版を削除せず、ネイティブ版が必要であることを利用者に伝えます。
+Mac/WSL2のシェルでは`command -v claude`、Windows PowerShellでは`Get-Command claude -All | Select-Object CommandType,Source`で実体を確認します。Windowsネイティブでは`claude.exe`、WSL2ではLinux版`claude`を使用します。既定の`~/.local/bin/claude.exe`も候補です。`claude.cmd`しかなければ、既存のnpm版を削除せず、ネイティブ版が必要であることを利用者に伝えます。
 
 見つけた実行ファイルで`--version`を実行します。`claudeCommand`へ設定するのは実行ファイルのパスだけです。フラグ・シェルのalias・`cd ... && claude`などを入れないでください。既存設定に独自のラッパーがある場合は保持し、診断で動作を確かめます。
 
@@ -56,7 +57,7 @@ JSONはUTF-8で書き、プレースホルダーを実パスへ置き換えま�
 node scripts/doctor.mjs
 ```
 
-`FAIL`を解消します。ただし診断の終了コード0は導入完了を意味しません。この診断はBridge未起動を`INFO`として扱い、ログイン・ツール権限・Chrome連携は検証しません。
+`FAIL`を解消します。ただし診断の終了コード0は導入完了を意味しません。WSL2はWindows側からのhealthも別途確認します。この診断はBridge未起動を`INFO`として扱い、ログイン・ツール権限・Chrome連携は検証しません。
 
 ## 4. Bridgeの起動を検証する
 
@@ -85,7 +86,11 @@ node scripts/service.mjs status
 
 MacはLaunchAgent、Windowsはタスクスケジューラを使います。登録成功やRunningだけで完了にしません。拒否されたらエラーと手動起動方法を伝え、管理者へ相談します。OSの実行ポリシーは変更しません。
 
+WSL2の自動起動は、Windowsタスクから対象ディストリビューションとユーザーを明示して実行します。systemdは不要です。WSLの既定設定やMac用・Windowsネイティブ用のサービスは変更しません。Windows側からのHTTP応答とworkspaceの一致も確認し、ポート競合を避けます。
+
 ## 5. Chromeと実Claudeで確認する
+
+WSL2では先に`node scripts/service.mjs export-extension`でWindows側へ拡張をコピーし、表示されたWindows絶対パスを読み込み先として使います。更新時も再exportが必要です。
 
 Chrome操作ツールが利用できなければ、次の操作を利用者へまとめて依頼します。実際の操作結果を受け取るまで未確認と記録してください。
 
@@ -103,7 +108,7 @@ Chrome操作ツールが利用できなければ、次の操作を利用者へ�
 
 次の項目を短く報告します。未実施の項目を成功扱いにせず、次に必要な操作を具体的に示してください。
 
-- 環境: OS、Node・Claudeのバージョン、設置先
+- 環境: OS、Node・Claudeのバージョン、設置先。WSL2はディストリビューション・Linuxユーザーも記載
 - 設定: workspace、Bridge URL、extensionの絶対パス、設定バックアップの場所（作成した場合）
 - 実行方法: 手動または自動起動、現在の稼働状況、停止コマンドとログの場所
 - 検証: 診断、HTTP、Chrome接続、要約、追加指示、ターミナル再開それぞれの結果

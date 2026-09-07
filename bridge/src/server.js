@@ -317,7 +317,7 @@ export function createBridgeServer({ config, runnerFactory = createClaudeRunner,
         json(res, 404, { error: "Claude Session not found." });
         return;
       }
-      const command = resumeCommand(cwd, sessionId, config.claudeCommand);
+      const command = resumeCommand(cwd, sessionId, config.claudeCommand, process.platform, config.claudeConfigDir || process.env.CLAUDE_CONFIG_DIR);
       const local = isLoopback(req);
       if (req.method === "GET") {
         json(res, 200, { command, local, canOpenTerminal: local && Boolean(config.terminalCommand) });

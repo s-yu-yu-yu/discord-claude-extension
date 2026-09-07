@@ -1,6 +1,6 @@
 {
   "name": "discord-claude-extension",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "A small Chrome-to-Claude Code bridge for Discord Web source messages.",
@@ -13,6 +13,7 @@
     "bridge:uninstall": "node scripts/service.mjs uninstall",
     "bridge:status": "node scripts/service.mjs status",
     "bridge:setup": "node scripts/setup.mjs",
+    "bridge:export-extension": "node scripts/service.mjs export-extension",
     "bridge:doctor": "node scripts/doctor.mjs",
     "bridge:start": "node bridge/src/index.js",
     "package": "node scripts/package.mjs"

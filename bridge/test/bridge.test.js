@@ -509,7 +509,7 @@ test("Bridge hands a resumable Claude Session off to a local terminal", async (t
   await writeFile(path.join(directory, `${sessionId}.jsonl`), JSON.stringify({ type: "user", message: { content: "再開するセッション" } }) + "\n");
   const query = `?cwd=${encodeURIComponent(config.workspace)}`;
   const info = await (await fetch(`${base}/sessions/${sessionId}/terminal${query}`)).json();
-  assert.deepEqual(info, { command: resumeCommand(config.workspace, sessionId), local: true, canOpenTerminal: true });
+  assert.deepEqual(info, { command: resumeCommand(config.workspace, sessionId, config.claudeCommand, process.platform, config.claudeConfigDir || process.env.CLAUDE_CONFIG_DIR), local: true, canOpenTerminal: true });
   const opened = await fetch(`${base}/sessions/${sessionId}/terminal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

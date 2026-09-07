@@ -1,6 +1,16 @@
 # 社内向け導入ガイド
 
-Discord Webで選んだ会話を、自分のPCのClaude Codeへ送るツールです。Chrome拡張とBridgeの両方を、利用者ごとのPCに設置します。まずは少人数で試用してください。Windowsの実機確認は [配布担当者向け手順](distribution.md) の確認表に沿って行います。
+Discord Webで選んだ会話を、自分のPCのClaude Codeへ送るツールです。Chrome拡張とBridgeを、利用者ごとのPCに設置します。macOS・Windowsネイティブ・WSL2の3環境が対象です。まずは少人数で試用してください。Windowsの実機確認は [配布担当者向け手順](distribution.md) の確認表に沿って行います。
+
+## 環境を選ぶ
+
+| Claude Codeを使っている環境 | BridgeとNode | Chrome拡張 | 導入手順 |
+| --- | --- | --- | --- |
+| macOS | Mac内 | MacのChrome | このページ |
+| Windowsネイティブ | Windows内 | WindowsのChrome | このページ |
+| WSL2 | 同じWSLディストリビューション内 | WindowsのChrome | [WSL2手順](setup-wsl2.md) |
+
+WSL2の方は、ネイティブ版へ移さず既存のLinux版Claudeを利用できます。
 
 ## Claude Codeにセットアップを任せる
 
@@ -8,7 +18,7 @@ Discord Webで選んだ会話を、自分のPCのClaude Codeへ送るツール�
 
 ```text
 このフォルダの docs/ai-setup.md を読み、Discord Claude Bridgeをセットアップしてください。
-既存のClaude Codeの認証・設定とMac/Windows環境を利用してください。
+既存のClaude Codeの認証・設定を利用し、Mac・Windowsネイティブ・WSL2を判別してください。
 既存のBridge設定があれば保持し、必要な設定と起動確認を進めてください。
 自動起動の希望は未指定です。Chromeなど私の操作が必要な部分は具体的に案内し、
 確認できた項目と残っている操作を最後に報告してください。
@@ -21,13 +31,13 @@ Discord Webで選んだ会話を、自分のPCのClaude Codeへ送るツール�
 - Google ChromeとDiscord Webへのログイン。Discordデスクトップアプリは対象外です。
 - Node.js 22以上（導入時は会社で承認されたLTS版）。[Node.js公式配布](https://nodejs.org/en/download)から導入します。
 - ネイティブ版Claude Code CLIと、会社で利用が認められたアカウント。Claude Desktopだけでは動きません。
-- WindowsではWindows PowerShell 5.1を利用します。WSLとWindows側のClaude環境を混在させないでください。
+- WindowsではWindows PowerShell 5.1を利用します。WSL2を使っている場合は、上記のWSL2手順へ進んでください。
 
 Claude Codeは [公式セットアップ](https://code.claude.com/docs/en/installation) に従ってインストールしてください。Windowsでは`claude.exe`を使用します。npm版の`claude.cmd`はこのBridgeの対象外です。Git for WindowsはBashを使う作業向けに推奨します。各自のPCで`claude --version`と`claude`を実行し、ログインを済ませます。
 
 ## 1. ZIPを展開する
 
-ZIP内の`discord-claude-extension-0.2.0`フォルダを、今後も使い続ける場所へ置きます。Windowsでは「すべて展開」を選んでください。ZIP内や一時フォルダから直接実行しないでください。
+ZIP内の`discord-claude-extension-0.3.0`フォルダを、今後も使い続ける場所へ置きます。Windowsでは「すべて展開」を選んでください。ZIP内や一時フォルダから直接実行しないでください。
 
 フォルダ内には`extension`、`bridge`、`scripts`、`docs`があります。フォルダを移動すると、自動起動とChrome拡張の再登録が必要です。
 
