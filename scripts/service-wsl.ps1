@@ -34,6 +34,7 @@ if ($Action -eq 'export-extension') {
   $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
   $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
   Register-ScheduledTask -TaskName $taskName -Action $actionSpec -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+  Enable-ScheduledTask -TaskName $taskName | Out-Null
   Start-ScheduledTask -TaskName $taskName
   Write-Output "Registered $taskName ($Distro / $LinuxUser). Log: $stateDir\bridge.log"
 } elseif ($Action -eq 'stop') {

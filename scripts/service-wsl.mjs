@@ -7,7 +7,7 @@ import { psQuote, psEncoded } from "../bridge/src/platform.js";
 
 export function wslServiceScript({ script, action, root, node, distro, user, searchPath, configDir = "" }) {
   const parameters = { Action: action, Root: root, NodePath: node, Distro: distro, LinuxUser: user, SearchPath: searchPath, ClaudeConfigDir: configDir };
-  return `& ${psQuote(script)} ${Object.entries(parameters).map(([key, value]) => `-${key} ${psQuote(value)}`).join(" ")}`;
+  return `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); & ${psQuote(script)} ${Object.entries(parameters).map(([key, value]) => `-${key} ${psQuote(value)}`).join(" ")}`;
 }
 
 export async function runWslService(action, root) {
