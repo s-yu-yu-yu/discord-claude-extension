@@ -1,4 +1,4 @@
-// Registers the Bridge as a macOS LaunchAgent so it runs in the background at login.
+// Registers the Bridge for the current login account.
 import { copyFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -38,12 +38,26 @@ const plist = () => `<?xml version="1.0" encoding="UTF-8"?>
 
 const launchctl = (...args) => spawnSync("launchctl", args, { encoding: "utf8" });
 
+if (process.platform === "win32") {
+  if (!["install", "uninstall", "status"].includes(command)) {
+    console.error("usage: node scripts/service.mjs install|uninstall|status");
+    process.exit(1);
+  }
+  if (command === "install" && !existsSync(configPath)) {
+    console.error("Run node scripts/setup.mjs first, then configure bridge/config.json.");
+    process.exit(1);
+  }
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-File", path.join(root, "scripts/service-windows.ps1"), "-Action", command, "-Root", root, "-NodePath", process.execPath], { stdio: "inherit" });
+  if (result.error) console.error(result.error.message);
+  process.exit(result.status ?? 1);
+}
 if (process.platform !== "darwin") {
-  console.error("This service helper supports macOS (launchd) only.");
+  console.error("This service helper supports macOS and native Windows only.");
   process.exit(1);
 }
 if (command === "install") {
   if (!existsSync(configPath)) copyFileSync(path.join(root, "bridge/config.example.json"), configPath);
+  mkdirSync(path.dirname(logPath), { recursive: true });
   mkdirSync(path.dirname(plistPath), { recursive: true });
   launchctl("bootout", `${domain}/${label}`); // restart if already registered
   writeFileSync(plistPath, plist());

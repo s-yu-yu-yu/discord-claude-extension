@@ -5,7 +5,7 @@
   "claudeCommand": "claude",
   "claudeModel": "opus",
   "claudeEffort": "high",
-  "permissionMode": "auto",
+  "permissionMode": "default",
   "projectRoots": [],
   "projectDepth": 2,
   "attachmentMaxBytes": 20971520,

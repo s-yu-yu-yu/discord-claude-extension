@@ -1,3 +1,4 @@
+import { cliInvocation } from "./platform.js";
 import { spawn } from "node:child_process";
 import { extractSessionTitle, stripSessionTitle } from "./prompt.js";
 
@@ -135,12 +136,16 @@ export function createClaudeRunner(config) {
         if (config.claudeModel) args.push("--model", config.claudeModel);
         if (config.claudeEffort) args.push("--effort", config.claudeEffort);
         if (config.permissionMode) args.push("--permission-mode", config.permissionMode);
-        child = spawn(config.claudeCommand, args, {
+        // Send user content over stdin: Windows has a much smaller command-line limit.
+        args.splice(1, 1);
+        const invocation = cliInvocation(config.claudeCommand, args);
+        child = spawn(invocation.executable, invocation.args, {
           cwd,
           env: config.claudeConfigDir
             ? { ...process.env, CLAUDE_CONFIG_DIR: config.claudeConfigDir }
             : process.env,
-          stdio: ["ignore", "pipe", "pipe"],
+          stdio: ["pipe", "pipe", "pipe"],
+          windowsHide: true,
         });
         let stdoutBuffer = "";
         let stderr = "";
@@ -192,6 +197,8 @@ export function createClaudeRunner(config) {
         child.stderr.setEncoding("utf8");
         child.stderr.on("data", (chunk) => { stderr += chunk; });
         child.on("error", reject);
+        child.stdin.on("error", (error) => { if (error.code !== "EPIPE") reject(error); });
+        child.stdin.end(prompt);
         child.on("close", (code, signal) => {
           if (stdoutBuffer) processLine(stdoutBuffer);
           child = undefined;

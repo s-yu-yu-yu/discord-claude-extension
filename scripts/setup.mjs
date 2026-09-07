@@ -1,0 +1,10 @@
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { loadConfig } from "../bridge/src/config.js";
+const root = fileURLToPath(new URL("../", import.meta.url));
+const target = path.join(root, "bridge/config.json");
+if (!existsSync(target)) copyFileSync(path.join(root, "bridge/config.example.json"), target);
+const config = loadConfig(target);
+mkdirSync(config.workspace, { recursive: true });
+console.log(`Config: ${target}\nWorkspace: ${config.workspace}\nNext: node scripts/doctor.mjs`);

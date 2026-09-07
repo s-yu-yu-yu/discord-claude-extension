@@ -27,48 +27,15 @@ Chrome の Side Panel に表示
 
 ## 2. 最初の準備（1回だけ）
 
-### 必要なもの
-- Node.js 20 以上
-- Claude Code CLI（ターミナルで `claude` と打つと動く状態）
-- Google Chrome
+Windows / macOSの導入は [社内向け導入ガイド](setup.md) を参照してください。Node.js 22以上、ネイティブ版Claude Code CLI、Google Chromeを使います。
 
-### 2-1. Bridge を動かす
+初期設定後は、展開フォルダで次を実行するとBridgeが起動します。
 
 ```sh
-cp bridge/config.example.json bridge/config.json
+node bridge/src/index.js
 ```
 
-`bridge/config.json` を開いて、最低限ここだけ直します。
-
-```json
-{
-  "workspace": "/Users/あなた/claude-discord-workspace",
-  "projectRoots": [
-    { "path": "/Users/あなた/Documents/GitHub", "depth": 2 }
-  ]
-}
-```
-
-| キー | 意味 |
-|---|---|
-| `workspace` | 「どのリポジトリにも属さないお願い」を処理する作業フォルダ。空フォルダで OK（なければ勝手に作られます） |
-| `projectRoots` | リポジトリがまとまって入っているフォルダ。この中の `.git` があるフォルダが「Project」として選べるようになります。`depth` はどれくらい深く探すか（既定 2） |
-
-起動:
-
-```sh
-node bridge/src/index.js --config bridge/config.json
-```
-
-`Claude Bridge listening on http://127.0.0.1:3456` と出れば OK。このターミナルは開いたままにしておきます。
-
-### 2-2. Chrome 拡張を入れる
-
-1. Chrome で `chrome://extensions` を開く
-2. 右上の「デベロッパーモード」を ON
-3. 「パッケージ化されていない拡張機能を読み込む」→ このリポジトリの `extension` フォルダを選ぶ
-4. 拡張の「詳細」→「拡張機能のオプション」で Bridge URL を確認（既定 `http://127.0.0.1:3456` のままなら保存だけ）。「接続テスト」で「Bridge に接続できます」と出れば完了
-5. Discord Web（https://discord.com）を開き直す
+自動起動を登録済みなら、この操作は不要です。Discord Webを開き、次の操作へ進みます。
 
 ---
 

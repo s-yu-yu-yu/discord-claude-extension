@@ -1,3 +1,4 @@
+import { resumeCommand } from "../src/platform.js";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { chmod, mkdtemp, mkdir, writeFile } from "node:fs/promises";
@@ -144,7 +145,7 @@ console.log(JSON.stringify({ type: "result", result: text }));
   const defaultRoot = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
   assert.equal(
     claudeProjectDirectory(workspace),
-    path.join(defaultRoot, "projects", workspace.split(path.sep).join("-")),
+    path.join(defaultRoot, "projects", workspace.replace(/[^a-zA-Z0-9]/g, "-")),
   );
   assert.equal(normalizeConfig({}).claudeConfigDir, undefined);
 });
@@ -500,7 +501,7 @@ test("Bridge hands a resumable Claude Session off to a local terminal", async (t
   const { server, base, config } = await startTestServer(
     () => ({ run: async () => ({}), stop() {} }),
     { claudeConfigDir: dataDir, terminalCommand: "echo {command}" },
-    { launchTerminal: (commandLine) => launched.push(commandLine) },
+    { launchTerminal: (template, commandLine) => launched.push(commandLine) },
   );
   t.after(() => server.close());
   const directory = claudeProjectDirectory(config.workspace, dataDir);
@@ -508,7 +509,7 @@ test("Bridge hands a resumable Claude Session off to a local terminal", async (t
   await writeFile(path.join(directory, `${sessionId}.jsonl`), JSON.stringify({ type: "user", message: { content: "再開するセッション" } }) + "\n");
   const query = `?cwd=${encodeURIComponent(config.workspace)}`;
   const info = await (await fetch(`${base}/sessions/${sessionId}/terminal${query}`)).json();
-  assert.deepEqual(info, { command: `cd "${config.workspace}" && claude --resume ${sessionId}`, local: true, canOpenTerminal: true });
+  assert.deepEqual(info, { command: resumeCommand(config.workspace, sessionId), local: true, canOpenTerminal: true });
   const opened = await fetch(`${base}/sessions/${sessionId}/terminal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
