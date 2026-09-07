@@ -2,6 +2,12 @@
 
 Discord Web のメッセージを Source Message として選び、ローカルの Bridge から Claude Code の General Session に送る Chrome 拡張です。v1 は Google Chrome と Discord Web を対象にし、Discord Bot や Bridge 認証は使用しません。
 
+## 社内向け配布版（0.3.0）
+
+macOS・Windowsネイティブ・WSL2に対応する配布構成です。WSL2ではLinux側のBridgeとWindows側のChromeを接続します。初めて使う方は [導入ガイド](docs/setup.md)、ZIPを作成する方は [配布手順と実機確認表](docs/distribution.md) を参照してください。Windows/WSL2での実Claude・Chrome連携確認は未実施です。
+
+Claude Codeに導入を任せる場合は、展開フォルダで「`docs/ai-setup.md`を読んでセットアップして」と依頼してください。[AI向け手順](docs/ai-setup.md)に環境確認・既存設定の保持・完了判定を記載しています。
+
 ## 構成
 
 ```text
@@ -18,7 +24,7 @@ Discord Web (content script)
 
 ### 1. Bridge
 
-Node.js 20 以上と、ログイン済みの Claude Code CLI が必要です。
+Node.js 22 以上と、ログイン済みの Claude Code CLI が必要です。
 
 ```sh
 cp bridge/config.example.json bridge/config.json
@@ -26,7 +32,7 @@ cp bridge/config.example.json bridge/config.json
 node bridge/src/index.js --config bridge/config.json
 ```
 
-`config.json` は JSON 形式です。LAN 上の別 PC から接続する場合は `host` を `0.0.0.0` にし、ファイアウォールで `port`（既定 3456）への接続を許可してください。Bridge は設定された `workspace` を cwd として `claude -p ... --output-format stream-json --verbose --include-partial-messages` を起動し、Claude Code の既存の permission 設定をそのまま利用します。
+`config.json` は JSON 形式です。社内配布では各PCで起動し、`host: "127.0.0.1"` を維持してください。Bridgeには認証がありません。Bridge は設定された `workspace` を cwd として `claude -p --output-format stream-json --verbose --include-partial-messages`（promptは標準入力） を起動し、Claude Code の既存の permission 設定をそのまま利用します。
 
 設定例:
 
@@ -51,11 +57,11 @@ node bridge/src/index.js --config bridge/config.json
 
 `actions` を省略すると Bridge 既定の Action Preset（`jira` Jiraに起票、`github-issue` GitHub Issue化、`summarize` 要約、`research` 調査、`critique` 批評、`freeform` 自由入力）を使います。「自由入力」も Bridge から配信される preset で、拡張側に固定の preset はありません。`bridge/config.example.json` に同じ一覧があります。
 
-`claudeCommand` を設定すると、CLI の場所やテスト用のラッパーを変更できます。`claudeModel`（既定 `opus`）と `claudeEffort`（既定 `high`）は CLI の `--model` / `--effort` にそのまま渡ります。`permissionMode`（既定 `auto`）は `--permission-mode` に渡り、対話 CLI の auto mode と同じ判定で権限を処理します。`""` を設定すると該当フラグを付けず、Claude Code 側の既定設定に従います。
+`claudeCommand` を設定すると、CLI の場所やテスト用のラッパーを変更できます。`claudeModel`（既定 `opus`）と `claudeEffort`（既定 `high`）は CLI の `--model` / `--effort` にそのまま渡ります。`permissionMode` は `--permission-mode` に渡ります。配布用exampleは `default`、省略時は既存動作との互換性のため `auto` です。`""` を設定すると該当フラグを付けず、Claude Code 側の既定設定に従います。
 
 ### 非対話モードのツール許可（MCP / gh など）
 
-Bridge は `claude -p`（非対話）で起動するため許可ダイアログを出せません。既定の `permissionMode: "auto"` なら対話 CLI の auto mode と同様に Claude が判定するため、MCP や `gh` もそのまま使えます。`permissionMode` を `default` や `""` にした場合は事前に許可されていないツールが自動で拒否される（回答に「権限が許可されていない」と出る）ので、General Workspace の `.claude/settings.json` に許可ルールを置いてください。
+Bridge は `claude -p`（非対話）で起動するため許可ダイアログを出せません。配布用設定は `permissionMode: "default"` を使用します。既存設定で `auto` を利用する場合も、CLI・モデル・組織の管理設定が対応している必要があります。`permissionMode` を `default` や `""` にした場合は事前に許可されていないツールが自動で拒否される（回答に「権限が許可されていない」と出る）ので、General Workspace の `.claude/settings.json` に許可ルールを置いてください。
 
 ```json
 {
@@ -79,7 +85,7 @@ npm run bridge:uninstall  # 登録解除
 
 ログは `~/Library/Logs/claude-bridge.log` に出ます。`bridge/config.json` を変更したら `npm run bridge:install` を再実行すると再起動します。Bridge は落ちても launchd が再起動します。
 
-`terminalCommand` は Side Panel の「ターミナルで開く」が実行するシェルコマンドで、`{command}` プレースホルダーが `cd "<cwd>" && claude --resume <session-id>` に置き換わります。macOS の既定値は `osascript -e 'tell application "Terminal" to do script "{command}"' -e 'tell application "Terminal" to activate'`（Terminal.app を起動）で、他の OS では空文字列のため起動は無効です。`""` を設定すると macOS でも起動を無効にでき、その場合はコマンドのコピーのみ利用できます。
+`terminalCommand` の既定値はmacOS/Windows/WSL2で`auto`です。macOSはTerminal.app、WindowsはWindows PowerShell、WSL2はWindows端末から同じディストリビューション・LinuxユーザーのClaudeを再開します。`""`を設定すると起動を無効にし、コマンドのコピーだけ利用できます。カスタム文字列では`{command}`が再開コマンドに置換され、macOSはsh、WindowsはPowerShellで実行します。通常は`auto`を使ってください。WSL2の導入・自動起動は [WSL2手順](docs/setup-wsl2.md) を参照してください。Windowsの自動起動登録は [導入ガイド](docs/setup.md) を参照してください。
 
 Message Context に含まれる Discord の添付ファイルは、ファイル名・URL・MIME type・サイズを prompt に記載します。画像、PDF、テキスト、ソースコード、JSON、CSV、ログなどの小さなファイルは Bridge が `attachmentsDir`（既定は OS の一時ディレクトリ配下の `claude-bridge-attachments`）の Claude Session ごとのサブディレクトリへダウンロードし、`--add-dir` で Claude Code から読めるようにします。`attachmentMaxBytes`（既定 20971520 = 20 MB）を超えるファイル、動画・音声、種類を判別できないファイルはダウンロードせず metadata と URL のみを渡します。ダウンロードの失敗は Side Panel に tool 行として表示され、残りの Message Context はそのまま送信されます。ダウンロード済みファイルは Bridge が起動時と1時間ごとに確認し、24時間を過ぎたものを削除します。
 
@@ -101,9 +107,9 @@ Current Session を開いたまま Discord の別メッセージで Claude ボ�
 
 Side Panel の「Discordコンテキストを更新」は、Current Session の Source Message があるチャンネルを開いている Discord Web のタブで送信 UI を開き直し、そのセッションへまだ送っていないメッセージだけを差分として表示します。差分は message 単位で ON/OFF してから追加します。別のチャンネルを表示している場合は Source Message のチャンネルへ移動するので、読み込み後にもう一度押してください。Bridge や拡張が Discord の変化を自動で取り込むことはなく、更新は常にこの明示的な操作で行います。
 
-Side Panel の Claude Session はターミナルへ引き継げます。「ターミナルで開く」は Bridge と Chrome が同一マシン（loopback 接続）で動作しているときだけ表示され、Bridge が `terminalCommand`（既定は macOS の Terminal.app を osascript で起動）を使って `cd "<cwd>" && claude --resume <session-id>` を実行します。Bridge が LAN 上の別マシンにある場合は代わりに「resumeコマンドをコピー」で同じコマンドをコピーし、Bridge のマシンで実行してください。どちらも同じ Claude Session の履歴を再開し、セッションは Side Panel の一覧に残ります。General Session・Project Session のどちらでも使えますが、turn の実行中は起動できません。
+Side Panel の Claude Session はターミナルへ引き継げます。「ターミナルで開く」は Bridge と Chrome が同一マシン（loopback 接続）で動作しているときだけ表示され、Bridge が `terminalCommand`（既定は macOS の Terminal.app / Windows PowerShell）を使って対象workspaceでClaudeを再開します（WindowsはPowerShell構文）。Bridge が LAN 上の別マシンにある場合は代わりに「resumeコマンドをコピー」で同じコマンドをコピーし、Bridge のマシンで実行してください。どちらも同じ Claude Session の履歴を再開し、セッションは Side Panel の一覧に残ります。General Session・Project Session のどちらでも使えますが、turn の実行中は起動できません。
 
-Side Panel のセッション一覧は Chrome の `storage.local` に保存した索引を起動時に Bridge と照合します。Bridge は Claude Code 2.1.251 が使う設定ルート（通常 `~/.claude`、`CLAUDE_CONFIG_DIR` または `claudeConfigDir` 指定時はそのルート）配下の `projects/<cwd-with-separators-replaced-by->/<session-id>.jsonl` を実在性の根拠にします。初回 turn では Claude に `[DCE_SESSION_TITLE]短いタイトル[/DCE_SESSION_TITLE]` マーカーを回答冒頭へ出すよう依頼し、Bridge がマーカーを除去してタイトルとして一覧へ保存します。
+Side Panel のセッション一覧は Chrome の `storage.local` に保存した索引を起動時に Bridge と照合します。Bridge は Claude Code 2.1.251 が使う設定ルート（通常 `~/.claude`、`CLAUDE_CONFIG_DIR` または `claudeConfigDir` 指定時はそのルート）配下の `projects/<cwdの非英数字をハイフンに置換>/<session-id>.jsonl` を実在性の根拠にします。初回 turn では Claude に `[DCE_SESSION_TITLE]短いタイトル[/DCE_SESSION_TITLE]` マーカーを回答冒頭へ出すよう依頼し、Bridge がマーカーを除去してタイトルとして一覧へ保存します。
 
 ## 開発コマンド
 
@@ -114,7 +120,7 @@ npm run build  # dist/extension に読み込み可能な拡張を生成
 npm run typecheck # JS-only 構成のため構文検査を実行
 ```
 
-`build` は `dist/extension` を毎回生成します。Bridge は実行時に設定ファイルを読み込むため、Bridge 自体のバンドルは不要です。
+`build` は `dist/extension` を毎回生成します。`npm run package` はBridge・拡張・導入ドキュメントを含む配布ZIPを生成します。開発コマンドはリポジトリで実行してください。配布ZIPには実行用コマンドのみ含めます。
 
 ## v1 の境界
 
@@ -127,5 +133,5 @@ npm run typecheck # JS-only 構成のため構文検査を実行
 - Issue #5 では Bridge の設定ファイルで General Workspace・Project root（走査深さ付き）・Action Preset を管理し、送信 UI は既定で General Workspace、必要なときだけ Project を選んで Project Session を開始します。Project の自動検出は `.git` を含むディレクトリのみで、Handoff は対象外です。
 - Issue #6 では完了した General Session から Project を選び、`--fork-session` で元セッションを変更せずに Handoff を生成して新しい Project Session の初期コンテキストにします。元セッションは別の Claude Session として残り、Project Session は元セッションへのリンクを保持します。Handoff の内容は Claude の要約であり、Bridge は検証しません。
 - Issue #7 では既存の Claude Session へ Discord コンテキストを追加します。Side Panel の「Discordコンテキストを更新」は開いている Discord タブのチャンネルを再読み込みし、送信済み ID との差分だけを確認対象にします。Discord の別メッセージから「現在のセッションに追加」も選べますが、既定は新しいセッションの開始です。追加分は `--resume` した同じ Claude Session に 1 turn として送られ、Source Link を保持します。自動同期は行いません。
-- Issue #8 では再開可能な Claude Session をターミナルへ引き継ぎます。Bridge と Chrome が同一マシンなら「ターミナルで開く」で `terminalCommand`（既定は macOS Terminal.app）を起動し、別マシンなら `cd "<cwd>" && claude --resume <id>` をコピーして実行します。引き継いでもセッションは Side Panel から消えず、Bridge は起動したターミナルの状態を追跡しません。
+- Issue #8 では再開可能な Claude Session をターミナルへ引き継ぎます。Bridge と Chrome が同一マシンなら「ターミナルで開く」で `terminalCommand`（既定は macOS Terminal.app / Windows PowerShell）を起動し、別マシンなら `cd "<cwd>" && claude --resume <id>` をコピーして実行します。引き継いでもセッションは Side Panel から消えず、Bridge は起動したターミナルの状態を追跡しません。
 - 手動 archive/delete、OS 通知、Bridge 認証、Discord への投稿、自動リトライは対象外です。Discord の内部 cache は現在の Webpack から最小限に探索するため、Discord の更新で利用できなくなる可能性があります。

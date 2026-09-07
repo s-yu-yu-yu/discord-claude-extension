@@ -1,5 +1,5 @@
 import http from "node:http";
-import { spawn } from "node:child_process";
+import { resumeCommand, launchTerminal as defaultLaunchTerminal } from "./platform.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
@@ -72,20 +72,8 @@ function resolveStoredCwd(config, cwd) {
   return cwd;
 }
 
-// Claude Code stores sessions per project directory, so the terminal must cd
-// into the session's cwd before `claude --resume` can find it.
-// ponytail: double quotes so the default osascript template (single-quoted
-// for /bin/sh) still delivers paths with spaces; a cwd containing ' breaks launch only.
-function resumeCommand(cwd, sessionId) {
-  return `cd "${cwd.replace(/(["\\$`])/g, "\\$1")}" && claude --resume ${sessionId}`;
-}
-
 export function isLoopback(req) {
   return ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket?.remoteAddress);
-}
-
-function defaultLaunchTerminal(commandLine) {
-  spawn("/bin/sh", ["-c", commandLine], { detached: true, stdio: "ignore" }).unref();
 }
 
 function sameMessage(left, right) {
@@ -329,7 +317,7 @@ export function createBridgeServer({ config, runnerFactory = createClaudeRunner,
         json(res, 404, { error: "Claude Session not found." });
         return;
       }
-      const command = resumeCommand(cwd, sessionId);
+      const command = resumeCommand(cwd, sessionId, config.claudeCommand, process.platform, config.claudeConfigDir || process.env.CLAUDE_CONFIG_DIR);
       const local = isLoopback(req);
       if (req.method === "GET") {
         json(res, 200, { command, local, canOpenTerminal: local && Boolean(config.terminalCommand) });
@@ -343,8 +331,12 @@ export function createBridgeServer({ config, runnerFactory = createClaudeRunner,
         json(res, 501, { error: "この Bridge ではターミナルを起動できません。コマンドをコピーして実行してください。", command });
         return;
       }
-      // {command} lands inside an AppleScript string literal in the default template.
-      launchTerminal(config.terminalCommand.replace("{command}", command.replace(/\\/g, "\\\\").replace(/"/g, '\\"')));
+      try {
+        await launchTerminal(config.terminalCommand, command);
+      } catch (error) {
+        json(res, 500, { error: `ターミナルを起動できません: ${error.message}`, command });
+        return;
+      }
       json(res, 200, { ok: true, command });
       return;
     }

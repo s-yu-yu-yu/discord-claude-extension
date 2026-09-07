@@ -1,9 +1,10 @@
+import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const jsFiles = [];
 
 async function visit(directory) {

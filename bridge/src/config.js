@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { runtimeEnvironment } from "./platform.js";
 import { extractSessionTitle } from "./prompt.js";
 
 export const DEFAULT_ACTIONS = [
@@ -36,10 +37,7 @@ export const DEFAULT_ACTIONS = [
   },
 ];
 
-// Opens macOS Terminal.app with the resume command substituted for {command}.
-const DEFAULT_TERMINAL_COMMAND = process.platform === "darwin"
-  ? `osascript -e 'tell application "Terminal" to do script "{command}"' -e 'tell application "Terminal" to activate'`
-  : "";
+const DEFAULT_TERMINAL_COMMAND = ["darwin", "win32", "wsl2"].includes(runtimeEnvironment()) ? "auto" : "";
 
 function expandHome(value) {
   if (typeof value !== "string") return value;
@@ -87,7 +85,7 @@ export function normalizeConfig(input = {}) {
 
 export function loadConfig(filePath) {
   if (!filePath || !existsSync(filePath)) return normalizeConfig();
-  const raw = JSON.parse(readFileSync(filePath, "utf8"));
+  const raw = JSON.parse(readFileSync(filePath, "utf8").replace(/^\uFEFF/, ""));
   return normalizeConfig(raw);
 }
 
@@ -129,10 +127,10 @@ function defaultClaudeConfigDir() {
 }
 
 // Claude Code 2.1.251 stores resumable sessions as <session-id>.jsonl under a
-// project directory whose name is the cwd with path separators replaced by '-'.
+// project directory whose name is the cwd with non-alphanumerics replaced by '-'.
 export function claudeProjectDirectory(cwd, claudeConfigDir) {
   const configDir = claudeConfigDir || defaultClaudeConfigDir();
-  return path.join(configDir, "projects", cwd.split(path.sep).join("-"));
+  return path.join(configDir, "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
 }
 
 function validSessionId(sessionId) {

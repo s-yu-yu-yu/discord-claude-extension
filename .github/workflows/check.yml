@@ -1,0 +1,31 @@
+name: Check
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+        node: [22, 24]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run package
+      - name: Parse PowerShell scripts
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Get-ChildItem scripts/*.ps1 | ForEach-Object {
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$parseErrors) | Out-Null
+            if ($parseErrors) { throw ($parseErrors | Out-String) }
+          }
