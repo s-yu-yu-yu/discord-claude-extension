@@ -22,7 +22,7 @@ test("Windows resume survives spaces, apostrophes, and shell metacharacters", ()
 });
 
 test("macOS default terminal passes AppleScript directly without a shell", () => {
-  const command = resumeCommand("/Users/O'Brien/$work", "id");
+  const command = resumeCommand("/Users/O'Brien/$work", "id", "claude", "darwin");
   const invocation = terminalInvocation('auto', command, 'darwin');
   assert.equal(invocation.executable, 'osascript');
   assert.match(invocation.args[1], /O'Brien/);

@@ -518,7 +518,7 @@ test("Bridge hands a resumable Claude Session off to a local terminal", async (t
   assert.equal(opened.status, 200);
   assert.equal((await opened.json()).ok, true);
   assert.equal(launched.length, 1);
-  assert.match(launched[0], new RegExp(`claude --resume ${sessionId}`));
+  assert.equal(launched[0], info.command);
   const missing = await fetch(`${base}/sessions/123e4567-e89b-12d3-a456-426614174003/terminal${query}`);
   assert.equal(missing.status, 404);
   assert.equal(isLoopback({ socket: { remoteAddress: "192.168.1.5" } }), false);
