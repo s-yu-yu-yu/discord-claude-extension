@@ -2,6 +2,20 @@
 
 Discord Webで選んだ会話を、自分のPCのClaude Codeへ送るツールです。Chrome拡張とBridgeの両方を、利用者ごとのPCに設置します。まずは少人数で試用してください。Windowsの実機確認は [配布担当者向け手順](distribution.md) の確認表に沿って行います。
 
+## Claude Codeにセットアップを任せる
+
+普段使っているClaude Codeで、展開したフォルダを開き、次を依頼してください。
+
+```text
+このフォルダの docs/ai-setup.md を読み、Discord Claude Bridgeをセットアップしてください。
+既存のClaude Codeの認証・設定とMac/Windows環境を利用してください。
+既存のBridge設定があれば保持し、必要な設定と起動確認を進めてください。
+自動起動の希望は未指定です。Chromeなど私の操作が必要な部分は具体的に案内し、
+確認できた項目と残っている操作を最後に報告してください。
+```
+
+自動起動も希望する場合は、その旨を追記できます。AI向けの実行順序・判断条件・完了基準は [Claude Code向け手順](ai-setup.md) にまとめています。以下は手動で導入する場合や、AIから案内された操作を確認するための手順です。
+
 ## 用意するもの
 
 - Google ChromeとDiscord Webへのログイン。Discordデスクトップアプリは対象外です。

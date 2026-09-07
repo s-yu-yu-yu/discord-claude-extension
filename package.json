@@ -8,7 +8,7 @@
     "build": "node scripts/build.mjs",
     "lint": "node scripts/check.mjs",
     "typecheck": "node scripts/check.mjs --typecheck",
-    "test": "node --test bridge/test",
+    "test": "node scripts/test.mjs",
     "bridge:install": "node scripts/service.mjs install",
     "bridge:uninstall": "node scripts/service.mjs uninstall",
     "bridge:status": "node scripts/service.mjs status",

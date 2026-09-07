@@ -6,6 +6,8 @@ Discord Web のメッセージを Source Message として選び、ローカル�
 
 Windowsネイティブ版とmacOSに対応する配布構成です。初めて使う方は [導入ガイド](docs/setup.md)、ZIPを作成する方は [配布手順と実機確認表](docs/distribution.md) を参照してください。Windows実機での確認は未実施です。
 
+Claude Codeに導入を任せる場合は、展開フォルダで「`docs/ai-setup.md`を読んでセットアップして」と依頼してください。[AI向け手順](docs/ai-setup.md)に環境確認・既存設定の保持・完了判定を記載しています。
+
 ## 構成
 
 ```text

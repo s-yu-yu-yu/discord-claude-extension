@@ -28,6 +28,7 @@ ZIP内の`SHA256SUMS.txt`は同梱ファイルのハッシュ一覧です。ZIP�
 | `bridge/src/` | Bridge本体 |
 | `bridge/config.example.json` | 個人情報を含まない初期設定 |
 | `scripts/` | 初期化・診断・自動起動 |
+| `docs/ai-setup.md` | Claude Codeが実行する環境確認・設定・検証手順 |
 | `docs/setup.md` | 利用者向けの導入・更新・削除手順 |
 | `docs/usage.md` | 日常の使い方 |
 
