@@ -28,6 +28,8 @@ node -p "JSON.stringify({platform:process.platform,release:require('node:os').re
 
 Mac/WSL2のシェルでは`command -v claude`、Windows PowerShellでは`Get-Command claude -All | Select-Object CommandType,Source`で実体を確認します。Windowsネイティブでは`claude.exe`、WSL2ではLinux版`claude`を使用します。既定の`~/.local/bin/claude.exe`も候補です。`claude.cmd`しかなければ、既存のnpm版を削除せず、ネイティブ版が必要であることを利用者に伝えます。
 
+`claude`が見つからない場合は、[公式インストール手順](https://code.claude.com/docs/en/setup)のネイティブインストーラー（macOS/WSL2は`curl -fsSL https://claude.ai/install.sh | bash`、Windows PowerShellは`irm https://claude.ai/install.ps1 | iex`）を利用者に案内し、承認を得てから実行します。Claude Desktopアプリだけでは`claude`コマンドは入りません。導入後のログインは利用者自身が同じ環境で行います。
+
 見つけた実行ファイルで`--version`を実行します。`claudeCommand`へ設定するのは実行ファイルのパスだけです。フラグ・シェルのalias・`cd ... && claude`などを入れないでください。既存設定に独自のラッパーがある場合は保持し、診断で動作を確かめます。
 
 Claude Codeで作業できていることだけで、別プロセスからの認証成功を断定しません。必要なら実行ファイルの`auth status`で状態を確認し、秘密情報を含む出力を報告へ転記しないでください。未ログインなら利用者に同じ環境でログインを依頼します。認証方式やアカウントは切り替えません。
@@ -58,6 +60,23 @@ node scripts/doctor.mjs
 ```
 
 `FAIL`を解消します。ただし診断の終了コード0は導入完了を意味しません。WSL2はWindows側からのhealthも別途確認します。この診断はBridge未起動を`INFO`として扱い、ログイン・ツール権限・Chrome連携は検証しません。
+
+### ツール許可を設定する
+
+Bridgeは`claude -p`（非対話）で動くため、許可ダイアログを出せません。`permissionMode: "default"`では未許可のツールが自動で拒否されるので、General Workspace（`workspace`）の`.claude/settings.json`へ許可ルールを置きます。利用者に「Jira起票・GitHub Issue化・Web検索のどれを使うか」を確認し、使うものだけ追加します。希望が不明なら`WebSearch`と`WebFetch`だけ追加し、残りは報告で案内します。
+
+```json
+{
+  "permissions": {
+    "allow": ["WebSearch", "WebFetch", "Bash(gh issue create:*)", "Bash(gh issue view:*)", "mcp__claude_ai_Atlassian"]
+  }
+}
+```
+
+- 既存の`settings.json`があれば日時付きバックアップを作り、`permissions.allow`へ不足分だけ追記します。他のキーや既存のルールは削除・変更しません。
+- `mcp__<server名>`は、利用者のClaude Codeに実際に接続済みのMCPサーバー名を使います。`claude mcp list`で確認し、無いサーバー名は追加しません。許可ルールはMCPサーバーの接続そのものを追加しないので、Jiraなどを使う場合は利用者に対話版Claude Codeでの接続を依頼します。
+- `gh`を使う場合は`gh auth status`でログイン済みか確認します。未ログインなら利用者に依頼し、代わりに認証を進めません。
+- `Bash(*)`のような広い許可や`permissionMode: "auto"`への変更で回避しないでください。Project Sessionで使う場合は各リポジトリの`.claude/settings.json`にも同様のルールが必要なことを報告に書きます。
 
 ## 4. Bridgeの起動を検証する
 
@@ -109,7 +128,7 @@ Chrome操作ツールが利用できなければ、次の操作を利用者へ�
 次の項目を短く報告します。未実施の項目を成功扱いにせず、次に必要な操作を具体的に示してください。
 
 - 環境: OS、Node・Claudeのバージョン、設置先。WSL2はディストリビューション・Linuxユーザーも記載
-- 設定: workspace、Bridge URL、extensionの絶対パス、設定バックアップの場所（作成した場合）
+- 設定: workspace、Bridge URL、extensionの絶対パス、追加したツール許可、設定バックアップの場所（作成した場合）
 - 実行方法: 手動または自動起動、現在の稼働状況、停止コマンドとログの場所
 - 検証: 診断、HTTP、Chrome接続、要約、追加指示、ターミナル再開それぞれの結果
 - 残り: ユーザー操作待ち・ポリシー制限・未確認事項

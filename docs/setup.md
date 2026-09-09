@@ -14,17 +14,9 @@ WSL2の方は、ネイティブ版へ移さず既存のLinux版Claudeを利用�
 
 ## Claude Codeにセットアップを任せる
 
-普段使っているClaude Codeで、展開したフォルダを開き、次を依頼してください。
+Bridgeの設定・起動確認・ツール許可の設定はClaude Codeに任せられます。展開したフォルダをClaude Code（Claude Desktopの**Code**タブ、またはターミナルの`claude`）で開き、[README「A. Claude に任せる」](../README.md#a-claude-に任せるおすすめ)のプロンプトを貼り付けてください。Claude Coworkは隔離された仮想環境で動くため、PC上でBridgeを起動できません。
 
-```text
-このフォルダの docs/ai-setup.md を読み、Discord Claude Bridgeをセットアップしてください。
-既存のClaude Codeの認証・設定を利用し、Mac・Windowsネイティブ・WSL2を判別してください。
-既存のBridge設定があれば保持し、必要な設定と起動確認を進めてください。
-自動起動の希望は未指定です。Chromeなど私の操作が必要な部分は具体的に案内し、
-確認できた項目と残っている操作を最後に報告してください。
-```
-
-自動起動も希望する場合は、その旨を追記できます。AI向けの実行順序・判断条件・完了基準は [Claude Code向け手順](ai-setup.md) にまとめています。以下は手動で導入する場合や、AIから案内された操作を確認するための手順です。
+AI向けの実行順序・判断条件・完了基準は [Claude Code向け手順](ai-setup.md) にまとめています。以下は手動で導入する場合や、AIから案内された操作を確認するための手順です。
 
 ## 用意するもの
 
@@ -35,9 +27,11 @@ WSL2の方は、ネイティブ版へ移さず既存のLinux版Claudeを利用�
 
 Claude Codeは [公式セットアップ](https://code.claude.com/docs/en/installation) に従ってインストールしてください。Windowsでは`claude.exe`を使用します。npm版の`claude.cmd`はこのBridgeの対象外です。Git for WindowsはBashを使う作業向けに推奨します。各自のPCで`claude --version`と`claude`を実行し、ログインを済ませます。
 
-## 1. ZIPを展開する
+## 1. ZIPをダウンロードして展開する
 
-ZIP内の`discord-claude-extension-0.3.0`フォルダを、今後も使い続ける場所へ置きます。Windowsでは「すべて展開」を選んでください。ZIP内や一時フォルダから直接実行しないでください。
+ブラウザで [Releases](https://github.com/s-yu-yu-yu/discord-claude-extension/releases/latest) を開き、Assetsの`discord-claude-extension-<バージョン>.zip`をダウンロードします。Gitは不要です。リポジトリへのアクセス権のあるGitHubアカウントでログインしてください。
+
+ZIP内の`discord-claude-extension-<バージョン>`フォルダを、今後も使い続ける場所へ置きます。Windowsでは「すべて展開」を選んでください。ZIP内や一時フォルダから直接実行しないでください。
 
 フォルダ内には`extension`、`bridge`、`scripts`、`docs`があります。フォルダを移動すると、自動起動とChrome拡張の再登録が必要です。
 
@@ -67,7 +61,7 @@ node scripts/doctor.mjs
 
 例の`your-name`を自分のユーザー名へ置き換えてください。Macでは`~/claude-discord-workspace`のようなパスを使えます。`projectRoots`は必要な人だけ設定します。
 
-配布設定の`permissionMode`は`default`です。非対話実行では許可を尋ねられないので、使いたいツールはGeneral Workspaceや対象Projectで対話版Claudeを開き、会社のルールに従って設定してください。`auto`の利用可否はClaude Codeのアカウント・モデル・管理設定に依存します。詳細は [公式の権限設定](https://code.claude.com/docs/en/permissions) を参照してください。
+配布設定の`permissionMode`は`default`です。非対話実行では許可を尋ねられないので、使いたいツール（Web検索、`gh`、Jira MCPなど）は`workspace`フォルダの`.claude/settings.json`へ事前に許可を書きます。書き方は [設定リファレンス](reference.md#非対話モードのツール許可mcp--gh-など) を参照してください。Claudeに任せる場合はプロンプトで使いたいツールを伝えるとこの設定も行います。`auto`の利用可否はClaude Codeのアカウント・モデル・管理設定に依存します。詳細は [公式の権限設定](https://code.claude.com/docs/en/permissions) を参照してください。
 
 ```sh
 node bridge/src/index.js

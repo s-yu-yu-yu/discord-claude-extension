@@ -2,23 +2,24 @@
 
 配布物はmacOS・Windowsネイティブ・WSL2共通のZIPです。Node.jsとClaude Codeは同梱せず、利用者が用意します。初回配布は少人数の試用版として扱い、下記の実機確認を終えてから対象を広げてください。
 
-## 作成
+## リリースする
 
-リポジトリのルートで実行します。Windows PowerShellでは`npm`の代わりに`npm.cmd`も利用できます。
+配布ZIPはGitHub Actionsが作り、[Releases](https://github.com/s-yu-yu-yu/discord-claude-extension/releases) に添付します。利用者はブラウザでダウンロードするだけで、Gitは使いません。
+
+1. `package.json`と`extension/manifest.json`の`version`を揃えて更新し、mainへマージします。
+2. mainで同じ番号のタグを付けて送ります。
 
 ```sh
-npm test
-npm run lint
-npm run typecheck
-npm run build
-npm run package
+git checkout main && git pull
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
-`dist/discord-claude-extension-0.3.0.zip`と`.zip.sha256`が生成されます。生成はmacOS/Linuxでは`zip`、WindowsではPowerShellの`Compress-Archive`を使います。展開可能な同名フォルダも`dist`に残ります。
+`.github/workflows/release.yml`がタグのpushでテスト・lint・`npm run package`を実行し、`discord-claude-extension-<version>.zip`と`.zip.sha256`を付けたReleaseを作成します。タグと`package.json`の版が違う場合は失敗します。Releaseの本文はコミットから自動生成されるので、必要なら利用者向けの変更点を追記してください。
 
-必要ファイルだけをコピーするため、`bridge/config.json`、Claudeの設定・認証情報、履歴、ダウンロード添付、`.git`は入りません。コードの未コミット変更は配布物に含まれるため、配布前に差分をレビューしてください。`package.json`とChrome manifestのバージョンを揃えて更新します。
+ローカルで確認したい場合は`npm run package`で`dist/`に同じZIPができます。作業ツリーの未コミット変更も含まれるため、配布にはCIが作ったものを使います。
 
-ZIP内の`SHA256SUMS.txt`は同梱ファイルのハッシュ一覧です。ZIP自体のハッシュは、Windowsでは`Get-FileHash <ZIPのパス> -Algorithm SHA256`、macOSでは`shasum -a 256 <ZIPのパス>`で確認できます。
+必要ファイルだけをコピーするため、`bridge/config.json`、Claudeの設定・認証情報、履歴、ダウンロード添付、`.git`は入りません。ZIP内の`SHA256SUMS.txt`は同梱ファイルのハッシュ一覧です。ZIP自体のハッシュは、Windowsでは`Get-FileHash <ZIPのパス> -Algorithm SHA256`、macOSでは`shasum -a 256 <ZIPのパス>`で確認できます。
 
 ## 配布物の内容
 
@@ -32,6 +33,8 @@ ZIP内の`SHA256SUMS.txt`は同梱ファイルのハッシュ一覧です。ZIP�
 | `docs/ai-setup.md` | Claude Codeが実行する環境確認・設定・検証手順 |
 | `docs/setup.md` | 利用者向けの導入・更新・削除手順 |
 | `docs/usage.md` | 日常の使い方 |
+| `docs/reference.md` | 設定キーと内部動作のリファレンス |
+| `README.md` | 入口。ダウンロードとClaudeに任せるセットアップ |
 
 ## 検証状況と実機確認
 
