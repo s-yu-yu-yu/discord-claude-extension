@@ -303,8 +303,30 @@ async function startStream(state, requestPath, body) {
   }
 }
 
+// Installed-app (PWA) windows have no Side Panel UI, so fall back to a popup
+// window showing the same page. ponytail: query Chrome for the existing popup
+// instead of tracking its id; the MV3 worker forgets module state when idle.
+const POPUP_WIDTH = 420;
+function popupBounds(win) {
+  // Dock to the app window's right edge so it sits where the Side Panel would.
+  // Fullscreen/minimized windows have no usable bounds; let Chrome place it.
+  if (win.state !== "normal" && win.state !== "maximized") return {};
+  return { top: win.top, left: win.left + win.width - POPUP_WIDTH, width: POPUP_WIDTH, height: win.height };
+}
 async function openPanel(windowId) {
-  try { await chrome.sidePanel.open({ windowId }); } catch { /* Chrome may reject a delayed/invalid window gesture. */ }
+  try {
+    const win = windowId == null ? null : await chrome.windows.get(windowId);
+    if (!win || win.type === "normal") { await chrome.sidePanel.open({ windowId }); return; }
+    const url = extensionUrl("sidepanel.html");
+    // Match any extension page: the popup may have navigated to options.html.
+    const [existing] = await chrome.tabs.query({ url: extensionUrl("*"), windowType: "popup" });
+    if (existing) {
+      await chrome.windows.update(existing.windowId, { focused: true });
+      if (existing.url !== url) await chrome.tabs.update(existing.id, { url });
+      return;
+    }
+    await chrome.windows.create({ url, type: "popup", ...popupBounds(win) });
+  } catch { /* Chrome may reject a delayed/invalid window gesture. */ }
 }
 
 // A new session before the Bridge has assigned its real ID.
