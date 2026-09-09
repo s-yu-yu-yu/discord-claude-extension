@@ -31,7 +31,7 @@ Discord Bot ではありません。Discord サーバー側の設定は不要で
 
 ## ダウンロード
 
-Git は不要です。ブラウザで [Releases](https://github.com/s-yu-yu-yu/discord-claude-extension/releases/latest) を開き、Assets の `discord-claude-extension-<バージョン>.zip` をダウンロードして展開します。このリポジトリは社内限定なので、GitHub にログインし、リポジトリへのアクセス権が必要です。
+Git は不要です。ブラウザで [Releases](https://github.com/s-yu-yu-yu/discord-claude-extension/releases/latest) を開き、Assets の `discord-claude-extension-<バージョン>.zip` をダウンロードして展開します。
 
 展開したフォルダは、今後も使い続ける場所（例: ホームフォルダ内の `apps`）へ置いてください。ダウンロードフォルダや一時フォルダから直接使うと、後で自動起動や Chrome 拡張の再登録が必要になります。Windows では ZIP を右クリックして「すべて展開」を選びます。
 
