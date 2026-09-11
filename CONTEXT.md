@@ -1,6 +1,6 @@
 # Discord Claude Extension
 
-Discord Webのメッセージを起点に、Claude Codeへ作業を依頼し、その作業を継続・発展させるためのChrome拡張とローカル実行環境。
+Discord Webのメッセージを起点にClaude Codeへ作業を依頼し、その作業を継続・発展させるためのChrome拡張とローカル実行環境。
 
 ## Language
 
@@ -9,15 +9,15 @@ Claudeへの依頼の起点としてユーザーが選択したDiscordメッセ�
 _Avoid_: Target Message, Original Message
 
 **Message Context**:
-Claudeへ渡すために選択されたSource Messageと関連Discordメッセージの集合。
+Claudeへ渡すために選択された、Source Messageとその関連Discordメッセージの集合。
 _Avoid_: Chat Log, History
 
 **Reply Chain**:
-Source Messageと同一の返信系統を表すMessage Context。親方向の祖先とSource Messageから派生する子孫を含み、兄弟分岐は含まない。
+Source Messageと同じ返信系統からなるMessage Context。親方向の祖先と、Source Messageから派生する子孫を含み、兄弟分岐は含まない。
 _Avoid_: Thread
 
 **Context Expansion**:
-Message Contextへ周辺メッセージや新しいDiscord上の差分を明示的に追加する操作。
+周辺メッセージや、Discord上で新たに増えた差分を、Message Contextへ明示的に追加する操作。
 _Avoid_: Sync, Auto Sync
 
 **Source Link**:
@@ -25,7 +25,7 @@ Message Context内の各Discordメッセージへ直接戻るためのDiscord pe
 _Avoid_: Reference URL
 
 **Claude Session**:
-Source Messageから始まり、追加指示を継続できる再開可能なClaude Code上の作業単位。
+Source Messageから始まり、追加指示を続けられる、再開可能なClaude Code上の作業単位。
 _Avoid_: Job, Task, Thread
 
 **Current Session**:
@@ -33,7 +33,7 @@ Side Panelで現在開かれており、新しいSource Messageや追加指示�
 _Avoid_: Active Job
 
 **General Workspace**:
-特定のProjectを指定しないClaude Sessionが利用する既定の作業コンテキスト。
+特定のProjectを指定しないClaude Sessionが利用する、既定の作業コンテキスト。
 _Avoid_: Default Project
 
 **Project**:
