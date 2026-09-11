@@ -1,10 +1,9 @@
 # Discord Claude Extension
 
-Discord Webのメッセージにマウスを乗せると出る「Claude」ボタンから、その会話を自分のPCのClaude Codeへ渡すChrome拡張です。返事はChromeの右側（Side Panel）に流れてきて、そのまま続けて指示も出せます。
+<img width="1774" height="887" alt="discord-to-local-claude" src="https://github.com/user-attachments/assets/19aaf0d8-445d-48c5-9500-b6c49e44bb14" />
 
-```text
-Discord Webのメッセージ → Chrome拡張 → Bridge（自分のPCで動く小さなサーバー） → Claude Code → Side Panelに返事
-```
+
+Discord Webのメッセージにマウスを乗せると出る「Claude」ボタンから、その会話を自分のPCのClaude Codeへ渡すChrome拡張です。返事はChromeの右側（Side Panel）に流れてきて、そのまま続けて指示も出せます。
 
 Discord Botではありません。Discordサーバー側の設定は不要で、Discordへ投稿もしません。
 
